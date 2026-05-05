@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>USB Firmware Update — Kiri Bridge Wiki</title>
+<meta name="description" content="Install Kiri Bridge firmware over USB instead of OTA when instructed by support or when you prefer a manual update path.">
+<link rel="canonical" href="https://kiri.dkt.moe/wiki-usb-update.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">wiki</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="ble_provisioning.html">setup</a>
+      <a href="flash.html">recovery</a>
+      <a href="wiki.html">wiki</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="guide-head">
+    <div class="shell">
+      <a class="guide-back" href="wiki.html">← Back to wiki</a>
+      <h1>Install firmware <span class="accent">over USB</span>.</h1>
+      <p>Use this when you prefer USB flashing, or when support asks you to install a specific release without using OTA from the device web UI.</p>
+      <div class="guide-meta">
+        <span class="wiki-chip">manual update</span>
+        <span class="wiki-chip">usb serial</span>
+        <span class="wiki-chip">.kiri package</span>
+        <span class="wiki-chip">support path</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell guide-layout">
+      <div class="guide-body">
+        <section id="choose" class="guide-section">
+          <h2>Choose the right package</h2>
+          <p>Kiri releases may include more than one <span class="mono">.kiri</span> file. Pick the one that matches what you are trying to do.</p>
+          <ul>
+            <li>Choose <span class="mono">kiri_bridge_... .kiri</span> when you want the normal production firmware.</li>
+            <li>Choose <span class="mono">kiri_installer_... .kiri</span> when support asks you to restore the installer or start over from WiFi setup.</li>
+            <li>If support sent you a specific filename, use that exact file.</li>
+          </ul>
+          <div class="guide-callout"><strong>If you are not sure which file to use, stop here.</strong> Use OTA from the device portal for normal updates, or ask support which <span class="mono">.kiri</span> file to flash.</div>
+        </section>
+
+        <section id="before" class="guide-section">
+          <h2>Before you start</h2>
+          <ul>
+            <li>Use Chrome or Edge on a computer.</li>
+            <li>Use a USB data cable.</li>
+            <li>Keep the downloaded <span class="mono">.kiri</span> file somewhere easy to find.</li>
+            <li>Close any serial monitor or flashing tool that may be using the device.</li>
+          </ul>
+        </section>
+
+        <section id="flash" class="guide-section">
+          <h2>Flash over USB</h2>
+          <ol>
+            <li>Open <a href="flash.html">Firmware recovery</a>. The same tool is used for manual USB installs.</li>
+            <li>Click <strong>Select &amp; verify</strong> and pick the Kiri Bridge serial device.</li>
+            <li>Confirm the page shows an ESP32 / ESP32-PICO-D4 chip and a MAC address.</li>
+            <li>Click <strong>Choose firmware</strong> and select the instructed <span class="mono">.kiri</span> file.</li>
+            <li>Review the package summary before continuing.</li>
+            <li>Check the confirmation box and click <strong>Write package</strong>.</li>
+            <li>Wait for the success dialog. Do not unplug the device while writing is in progress.</li>
+            <li>Restart the device manually after the browser releases USB.</li>
+          </ol>
+        </section>
+
+        <section id="after" class="guide-section">
+          <h2>What to do after flashing</h2>
+          <h3>If you flashed production firmware</h3>
+          <ul>
+            <li>Wait about 30 seconds after restart.</li>
+            <li>Open the existing portal address if the device was already on WiFi.</li>
+            <li>If the portal does not open, power-cycle once and try again.</li>
+          </ul>
+          <h3>If you flashed installer firmware</h3>
+          <ul>
+            <li>Wait for the LED to blink blue.</li>
+            <li>Run <a href="ble_provisioning.html">WiFi setup</a>.</li>
+            <li>Open the reported <span class="mono">http://IP:8080/</span> portal.</li>
+            <li>Install production firmware from the portal using OTA.</li>
+          </ul>
+        </section>
+
+        <section id="trouble" class="guide-section">
+          <h2>If something goes wrong</h2>
+          <ul>
+            <li>If the browser cannot find the serial port, change USB cable first.</li>
+            <li>If flashing fails before writing starts, download the package again and retry.</li>
+            <li>If flashing fails during writing, unplug the device, plug it back in, and repeat the USB recovery flow with the installer package.</li>
+            <li>If the device flashes successfully but does not boot as expected, use the recovery guide and start from the installer.</li>
+          </ul>
+          <div class="guide-next">
+            <a class="btn btn-primary" href="flash.html">Open flasher →</a>
+            <a class="btn" href="wiki-recovery.html">Recovery guide</a>
+          </div>
+        </section>
+      </div>
+
+      <aside class="guide-side" aria-label="Guide sections">
+        <h2>On this page</h2>
+        <a href="#choose">Choose package</a>
+        <a href="#before">Before you start</a>
+        <a href="#flash">Flash over USB</a>
+        <a href="#after">After flashing</a>
+        <a href="#trouble">Troubleshooting</a>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

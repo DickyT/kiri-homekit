@@ -34,7 +34,7 @@
   <section class="wiki-head">
     <div class="shell">
       <h1>Kiri Bridge <span class="accent">wiki</span>.</h1>
-      <p>Short, practical guides for activating a new device, recovering a stuck device, or installing firmware over USB when OTA is not the right path.</p>
+      <p>Pick the situation that matches what you are doing. Each guide is written as a step-by-step checklist, with the expected LED and browser behavior called out along the way.</p>
     </div>
   </section>
 
@@ -50,21 +50,15 @@
         <article class="wiki-guide">
           <div>
             <h3>Activate a new Kiri Bridge</h3>
-            <p>Use Bluetooth once to put the device on WiFi, then finish setup from the local portal.</p>
+            <p>Use this if the device is new, the LED is blinking blue, and you want to get it onto WiFi and into HomeKit for the first time.</p>
             <div class="wiki-guide-meta">
               <span class="wiki-chip">new kit</span>
               <span class="wiki-chip">bluetooth</span>
               <span class="wiki-chip">2.4 GHz WiFi</span>
             </div>
-            <ol>
-              <li>Power the Kiri Bridge and wait for a fast blue blink.</li>
-              <li>Open WiFi setup in Chrome or Edge and send your 2.4 GHz WiFi credentials.</li>
-              <li>Open the device portal at <span class="mono">http://IP:8080/</span> once the setup page reports an IP address.</li>
-              <li>Use OTA on the portal to install the latest production <span class="mono">.kiri</span> release.</li>
-              <li>After reboot, open the portal again and pair the device in the Apple Home app.</li>
-            </ol>
+            <p class="wiki-summary">Covers power-up, BLE WiFi setup, opening the local portal, installing production firmware, and HomeKit pairing.</p>
           </div>
-          <a class="btn btn-primary wiki-guide-action" href="ble_provisioning.html">Open setup →</a>
+          <a class="btn btn-primary wiki-guide-action" href="wiki-new-device.html">Read guide →</a>
         </article>
       </section>
 
@@ -77,21 +71,15 @@
         <article class="wiki-guide">
           <div>
             <h3>Re-flash the installer over USB</h3>
-            <p>The browser verifies the ESP32, checks the <span class="mono">.kiri</span> package, then writes the installer firmware over USB serial.</p>
+            <p>Use this if the web UI is unreachable, an OTA update failed, the device seems stuck, or support asks you to restore the installer.</p>
             <div class="wiki-guide-meta">
               <span class="wiki-chip">recovery</span>
               <span class="wiki-chip">usb serial</span>
               <span class="wiki-chip">chrome / edge</span>
             </div>
-            <ol>
-              <li>Connect the Kiri Bridge to your computer over USB.</li>
-              <li>Open the recovery flasher and select the serial device.</li>
-              <li>Choose the installer <span class="mono">.kiri</span> package from GitHub Releases.</li>
-              <li>Confirm the hardware summary and write the package.</li>
-              <li>Restart the device manually, wait for the blue blink, then run WiFi setup again.</li>
-            </ol>
+            <p class="wiki-summary">Covers USB connection, board verification, choosing the installer package, flashing, rebooting, and returning to WiFi setup.</p>
           </div>
-          <a class="btn btn-primary wiki-guide-action" href="flash.html">Open recovery →</a>
+          <a class="btn btn-primary wiki-guide-action" href="wiki-recovery.html">Read guide →</a>
         </article>
       </section>
 
@@ -104,21 +92,15 @@
         <article class="wiki-guide">
           <div>
             <h3>Update firmware over USB instead of OTA</h3>
-            <p>This is the same flasher as recovery, but used deliberately as a manual install path.</p>
+            <p>Use this if you prefer USB flashing, or if support tells you to install a specific release over USB instead of OTA.</p>
             <div class="wiki-guide-meta">
               <span class="wiki-chip">manual update</span>
               <span class="wiki-chip">support</span>
               <span class="wiki-chip">no OTA</span>
             </div>
-            <ol>
-              <li>Download the instructed <span class="mono">.kiri</span> release before starting.</li>
-              <li>Connect the Kiri Bridge to USB and open the recovery flasher.</li>
-              <li>Select and verify the board, then choose the firmware package.</li>
-              <li>Write the package and restart the device manually when the success dialog appears.</li>
-              <li>If you installed the installer package, continue through BLE WiFi setup before installing production firmware.</li>
-            </ol>
+            <p class="wiki-summary">Covers choosing the right release file, flashing it safely, and what to do after flashing either installer or production firmware.</p>
           </div>
-          <a class="btn btn-primary wiki-guide-action" href="flash.html">Open flasher →</a>
+          <a class="btn btn-primary wiki-guide-action" href="wiki-usb-update.html">Read guide →</a>
         </article>
       </section>
 

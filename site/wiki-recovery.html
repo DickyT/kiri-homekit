@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>USB Recovery — Kiri Bridge Wiki</title>
+<meta name="description" content="Recover a Kiri Bridge by flashing the installer firmware over USB from a browser.">
+<link rel="canonical" href="https://kiri.dkt.moe/wiki-recovery.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">wiki</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="ble_provisioning.html">setup</a>
+      <a href="flash.html">recovery</a>
+      <a href="wiki.html">wiki</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="guide-head">
+    <div class="shell">
+      <a class="guide-back" href="wiki.html">← Back to wiki</a>
+      <h1>Recover with <span class="accent">USB flashing</span>.</h1>
+      <p>Use this when the Kiri Bridge web UI will not open, an OTA update failed, the device is in a bad state, or support asks you to restore the installer firmware.</p>
+      <div class="guide-meta">
+        <span class="wiki-chip">recovery</span>
+        <span class="wiki-chip">usb cable</span>
+        <span class="wiki-chip">chrome / edge</span>
+        <span class="wiki-chip">installer firmware</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell guide-layout">
+      <div class="guide-body">
+        <section id="when" class="guide-section">
+          <h2>When to use this</h2>
+          <ul>
+            <li>The device does not show up on your network.</li>
+            <li>The local portal at <span class="mono">http://IP:8080/</span> does not load after rebooting.</li>
+            <li>An OTA update failed and the device no longer behaves normally.</li>
+            <li>Support tells you to restore or re-flash the installer.</li>
+          </ul>
+          <div class="guide-callout"><strong>This process writes firmware over USB.</strong> It is safe for Kiri Bridge hardware, but you should not use it on random ESP32 boards.</div>
+        </section>
+
+        <section id="before" class="guide-section">
+          <h2>Before you start</h2>
+          <ul>
+            <li>Use <strong>Chrome or Edge</strong> on a computer.</li>
+            <li>Use a USB data cable, not a charge-only cable.</li>
+            <li>Download the latest <span class="mono">kiri_installer_... .kiri</span> file from <a href="https://github.com/DickyT/kiri-homekit/releases">GitHub Releases</a>.</li>
+            <li>Close serial monitor tools, Arduino IDE, ESP-IDF monitor, or anything else using the same USB port.</li>
+          </ul>
+        </section>
+
+        <section id="connect" class="guide-section">
+          <h2>1. Connect and verify the board</h2>
+          <ol>
+            <li>Connect Kiri Bridge to your computer with USB.</li>
+            <li>Open <a href="flash.html">Firmware recovery</a>.</li>
+            <li>Click <strong>Select &amp; verify</strong>.</li>
+            <li>In the browser's serial picker, select the Kiri Bridge USB serial device.</li>
+            <li>Wait for the page to show the chip and MAC address summary.</li>
+          </ol>
+          <h3>If the serial device is missing</h3>
+          <ul>
+            <li>Try a different USB cable.</li>
+            <li>Try a different USB port.</li>
+            <li>Unplug Kiri Bridge, wait 5 seconds, plug it back in, and click Select &amp; verify again.</li>
+          </ul>
+        </section>
+
+        <section id="package" class="guide-section">
+          <h2>2. Choose the installer package</h2>
+          <ol>
+            <li>Click <strong>Choose firmware</strong>.</li>
+            <li>Select the <span class="mono">kiri_installer_... .kiri</span> file.</li>
+            <li>Read the package summary. It should say installer, Kiri Bridge, and ESP32.</li>
+            <li>If the browser rejects the file, download it again from GitHub Releases and retry.</li>
+          </ol>
+          <div class="guide-callout"><strong>Do not choose a .bin file.</strong> The recovery page expects a <span class="mono">.kiri</span> package.</div>
+        </section>
+
+        <section id="flash" class="guide-section">
+          <h2>3. Write the package</h2>
+          <ol>
+            <li>Check the confirmation box that says this is Kiri Bridge hardware.</li>
+            <li>Click <strong>Write package</strong>.</li>
+            <li>Do not unplug the device while the progress bar is moving.</li>
+            <li>When the success dialog appears, the browser has released the USB port.</li>
+            <li>Restart the device manually by pressing reset, unplugging and plugging it back in, or moving it to the heat pump.</li>
+          </ol>
+        </section>
+
+        <section id="after" class="guide-section">
+          <h2>4. After recovery</h2>
+          <ol>
+            <li>Wait for the LED to blink blue.</li>
+            <li>Open <a href="ble_provisioning.html">WiFi setup</a>.</li>
+            <li>Send WiFi credentials again.</li>
+            <li>Open the portal at the reported <span class="mono">http://IP:8080/</span> address.</li>
+            <li>Install the latest production <span class="mono">kiri_bridge_... .kiri</span> file through OTA.</li>
+          </ol>
+          <div class="guide-next">
+            <a class="btn btn-primary" href="flash.html">Open recovery →</a>
+            <a class="btn" href="wiki-new-device.html">Activation guide</a>
+          </div>
+        </section>
+      </div>
+
+      <aside class="guide-side" aria-label="Guide sections">
+        <h2>On this page</h2>
+        <a href="#when">When to use this</a>
+        <a href="#before">Before you start</a>
+        <a href="#connect">Connect board</a>
+        <a href="#package">Choose package</a>
+        <a href="#flash">Write package</a>
+        <a href="#after">After recovery</a>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
