@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wiki — Kiri Bridge</title>
+<meta name="description" content="Kiri Bridge setup, recovery, and USB firmware update guides for Mitsubishi CN105 HomeKit controllers.">
+<link rel="canonical" href="https://kiri.dkt.moe/wiki.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kiri Bridge">
+<meta property="og:title" content="Kiri Bridge Wiki">
+<meta property="og:description" content="Setup, recovery, and USB firmware update guides for Kiri Bridge.">
+<meta property="og:url" content="https://kiri.dkt.moe/wiki.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">wiki</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="ble_provisioning.html">setup</a>
+      <a href="flash.html">recovery</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="wiki-head">
+    <div class="shell">
+      <h1>Kiri Bridge <span class="accent">wiki</span>.</h1>
+      <p>Short, practical guides for activating a new device, recovering a stuck device, or installing firmware over USB when OTA is not the right path.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell wiki-layout">
+
+      <section class="wiki-folder" aria-labelledby="start-here">
+        <div>
+          <div class="wiki-folder-kicker">01 Start Here</div>
+          <h2 id="start-here">New device activation</h2>
+          <p>For a Kiri Bridge kit that just arrived and already blinks blue after power-on.</p>
+        </div>
+        <article class="wiki-guide">
+          <div>
+            <h3>Activate a new Kiri Bridge</h3>
+            <p>Use Bluetooth once to put the device on WiFi, then finish setup from the local portal.</p>
+            <div class="wiki-guide-meta">
+              <span class="wiki-chip">new kit</span>
+              <span class="wiki-chip">bluetooth</span>
+              <span class="wiki-chip">2.4 GHz WiFi</span>
+            </div>
+            <ol>
+              <li>Power the Kiri Bridge and wait for a fast blue blink.</li>
+              <li>Open WiFi setup in Chrome or Edge and send your 2.4 GHz WiFi credentials.</li>
+              <li>Open the device portal at <span class="mono">http://IP:8080/</span> once the setup page reports an IP address.</li>
+              <li>Use OTA on the portal to install the latest production <span class="mono">.kiri</span> release.</li>
+              <li>After reboot, open the portal again and pair the device in the Apple Home app.</li>
+            </ol>
+          </div>
+          <a class="btn btn-primary wiki-guide-action" href="ble_provisioning.html">Open setup →</a>
+        </article>
+      </section>
+
+      <section class="wiki-folder" aria-labelledby="recovery">
+        <div>
+          <div class="wiki-folder-kicker">02 Recovery</div>
+          <h2 id="recovery">Fix a broken or stuck install</h2>
+          <p>For OTA failures, unreachable web UI, bad configuration, or support-directed recovery.</p>
+        </div>
+        <article class="wiki-guide">
+          <div>
+            <h3>Re-flash the installer over USB</h3>
+            <p>The browser verifies the ESP32, checks the <span class="mono">.kiri</span> package, then writes the installer firmware over USB serial.</p>
+            <div class="wiki-guide-meta">
+              <span class="wiki-chip">recovery</span>
+              <span class="wiki-chip">usb serial</span>
+              <span class="wiki-chip">chrome / edge</span>
+            </div>
+            <ol>
+              <li>Connect the Kiri Bridge to your computer over USB.</li>
+              <li>Open the recovery flasher and select the serial device.</li>
+              <li>Choose the installer <span class="mono">.kiri</span> package from GitHub Releases.</li>
+              <li>Confirm the hardware summary and write the package.</li>
+              <li>Restart the device manually, wait for the blue blink, then run WiFi setup again.</li>
+            </ol>
+          </div>
+          <a class="btn btn-primary wiki-guide-action" href="flash.html">Open recovery →</a>
+        </article>
+      </section>
+
+      <section class="wiki-folder" aria-labelledby="advanced">
+        <div>
+          <div class="wiki-folder-kicker">03 Advanced</div>
+          <h2 id="advanced">Manual firmware install</h2>
+          <p>For users who prefer USB flashing, or when support asks you to avoid OTA for a specific update.</p>
+        </div>
+        <article class="wiki-guide">
+          <div>
+            <h3>Update firmware over USB instead of OTA</h3>
+            <p>This is the same flasher as recovery, but used deliberately as a manual install path.</p>
+            <div class="wiki-guide-meta">
+              <span class="wiki-chip">manual update</span>
+              <span class="wiki-chip">support</span>
+              <span class="wiki-chip">no OTA</span>
+            </div>
+            <ol>
+              <li>Download the instructed <span class="mono">.kiri</span> release before starting.</li>
+              <li>Connect the Kiri Bridge to USB and open the recovery flasher.</li>
+              <li>Select and verify the board, then choose the firmware package.</li>
+              <li>Write the package and restart the device manually when the success dialog appears.</li>
+              <li>If you installed the installer package, continue through BLE WiFi setup before installing production firmware.</li>
+            </ol>
+          </div>
+          <a class="btn btn-primary wiki-guide-action" href="flash.html">Open flasher →</a>
+        </article>
+      </section>
+
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+    <a class="footer-github" href="https://github.com/DickyT/kiri-homekit" aria-label="Source on GitHub">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.89-.39.98 0 1.97.13 2.89.39 2.21-1.49 3.18-1.18 3.18-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.77 1.05.77 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/>
+      </svg>
+    </a>
+  </div>
+</footer>
+
+</body>
+</html>
