@@ -8,6 +8,7 @@ It is local-first, browser-provisioned, and designed to be recoverable without
 command line tools.
 
 - Website: <https://kiri.dkt.moe>
+- Wiki and setup guides: <https://kiri.dkt.moe/wiki.html>
 - WiFi setup: <https://kiri.dkt.moe/ble_provisioning.html>
 - Firmware recovery: <https://kiri.dkt.moe/flash.html>
 - Source: <https://github.com/DickyT/kiri-homekit>
@@ -35,24 +36,15 @@ modal with a contact email.
 
 ## For Buyers
 
-If you bought a Kiri Bridge, start here:
+If you bought a Kiri Bridge, start with the website:
 
-- [Installation Guide](./INSTALL.md)
-- [Firmware Recovery Guide](./FLASHING.md)
+- Website: <https://kiri.dkt.moe>
+- Setup and recovery wiki: <https://kiri.dkt.moe/wiki.html>
+- WiFi setup tool: <https://kiri.dkt.moe/ble_provisioning.html>
+- USB recovery flasher: <https://kiri.dkt.moe/flash.html>
 
-Normal setup is:
-
-1. Power on the Kiri Bridge.
-2. Wait for the LED to rapidly blink blue.
-3. Open <https://kiri.dkt.moe/ble_provisioning.html>.
-4. Provision 2.4 GHz WiFi.
-5. Open the device portal at `http://<device-ip>:8080/`.
-6. Pair with Apple Home.
-7. Connect the CN105 cable to the Mitsubishi indoor unit.
-
-If normal setup fails, use the browser flasher at
-<https://kiri.dkt.moe/flash.html> with the latest installer package from
-GitHub Releases.
+Buyer-facing setup, recovery, and USB update instructions live on the website
+so the docs only need to be maintained in one place.
 
 ## Firmware Releases
 
@@ -82,8 +74,6 @@ ongoing.
 ## Repository Layout
 
 - [`site`](./site): static website pages for `kiri.dkt.moe`
-- [`INSTALL.md`](./INSTALL.md): buyer installation guide
-- [`FLASHING.md`](./FLASHING.md): buyer firmware recovery guide
 - [`main`](./main): production ESP-IDF app entrypoint
 - [`components`](./components): firmware components
 - [`debug_apps/cn105_probe`](./debug_apps/cn105_probe): installer/probe firmware
