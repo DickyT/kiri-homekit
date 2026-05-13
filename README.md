@@ -11,6 +11,7 @@ command line tools.
 - Wiki and setup guides: <https://kiri.dkt.moe/wiki.html>
 - WiFi setup: <https://kiri.dkt.moe/ble_provisioning.html>
 - Firmware recovery: <https://kiri.dkt.moe/flash.html>
+- Firmware releases: <https://github.com/DickyT/kiri-homekit/releases/>
 - Source: <https://github.com/DickyT/kiri-homekit>
 
 ## What It Does
@@ -53,8 +54,9 @@ Release packages are published as `.kiri` files:
 - `kiri_installer_<version>.kiri`: recovery and first-time restore path.
 - `kiri_bridge_<version>.kiri`: production firmware.
 
-Users should download release packages from GitHub Releases. Building from
-source is for developers and is not required for normal installation.
+Users should download release packages from
+<https://github.com/DickyT/kiri-homekit/releases/>. Building from source is for
+developers and is not required for normal installation.
 
 ## Current Status
 
