@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Activate with Bluetooth — Kiri Bridge Wiki</title>
+<meta name="description" content="Put a new Kiri Bridge on WiFi over Bluetooth, then install production firmware from its local portal.">
+<link rel="canonical" href="https://kiri.dkt.moe/wiki-new-device-ble.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">wiki</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="ble_provisioning.html">setup</a>
+      <a href="flash.html">recovery</a>
+      <a href="wiki.html">wiki</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="guide-head">
+    <div class="shell">
+      <a class="guide-back" href="wiki-new-device.html">← Choose another activation method</a>
+      <h1>Activate through <span class="accent">Bluetooth</span>.</h1>
+      <p>Send WiFi credentials over BLE first, open the installer on your home network, then install production firmware whenever you are ready.</p>
+      <div class="guide-meta">
+        <span class="wiki-chip">bluetooth</span>
+        <span class="wiki-chip">desktop chrome or app</span>
+        <span class="wiki-chip">2.4 GHz WiFi</span>
+        <span class="wiki-chip">install firmware later</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell guide-layout">
+      <div class="guide-body">
+        <section id="before" class="guide-section">
+          <h2>Before you start</h2>
+          <ul>
+            <li>Have the name and password for your <strong>2.4 GHz WiFi network</strong> ready.</li>
+            <li>For browser setup, use <strong>desktop Chrome</strong> on a Windows PC or Mac.</li>
+            <li>Phone browsers cannot complete this setup because they do not expose the required Web Bluetooth API.</li>
+            <li>For phone setup, use the official <strong>ESP BLE Provisioning</strong> app by Espressif instead.</li>
+            <li>Download the latest production <a href="https://github.com/DickyT/kiri-homekit/releases/"><span class="mono">kiri_bridge_... .kiri</span> file</a> before the OTA step.</li>
+          </ul>
+        </section>
+
+        <section id="power" class="guide-section">
+          <h2>1. Power the device</h2>
+          <ol>
+            <li>Plug Kiri Bridge into USB power, or connect it to the Mitsubishi indoor unit's CN105 port.</li>
+            <li>Wait about 10-20 seconds.</li>
+            <li>Confirm the LED is blinking blue quickly. This means BLE provisioning is available.</li>
+          </ol>
+          <h3>If the LED does not blink blue</h3>
+          <ul>
+            <li>Unplug the device, wait 5 seconds, and plug it back in.</li>
+            <li>If setup mode still does not appear, follow the <a href="wiki-recovery.html">USB recovery guide</a>.</li>
+          </ul>
+        </section>
+
+        <section id="browser" class="guide-section">
+          <h2>2. Send WiFi from a browser</h2>
+          <ol>
+            <li>Open <a href="ble_provisioning.html">BLE WiFi provisioning</a> in desktop Chrome on a Windows PC or Mac.</li>
+            <li>Click <strong>LED is blinking blue</strong>.</li>
+            <li>Click <strong>Open BLE picker</strong>.</li>
+            <li>Choose the nearby device named <span class="mono">PROV_KIRI_...</span>.</li>
+            <li>Enter your home WiFi SSID and password.</li>
+            <li>Click <strong>Send credentials</strong> and wait for the success message.</li>
+          </ol>
+          <div class="guide-callout"><strong>Success looks like this:</strong> the page shows an IP address and an access portal link such as <span class="mono">http://192.168.1.42:8080/</span>.</div>
+        </section>
+
+        <section id="app" class="guide-section">
+          <h2>Alternative: use the Espressif phone app</h2>
+          <ol>
+            <li>Install the official <strong>ESP BLE Provisioning</strong> app by Espressif on iPhone or Android.</li>
+            <li>Open the app and select <strong>Provision Device</strong>.</li>
+            <li>Select <strong>I do not have a QR code</strong>.</li>
+            <li>Choose the device named <span class="mono">PROV_KIRI_...</span>.</li>
+            <li>If prompted for a Proof of Possession (PoP), enter <span class="mono">abcd1234</span>.</li>
+            <li>Select your 2.4 GHz WiFi network, enter its password, and follow the app instructions.</li>
+          </ol>
+          <div class="guide-callout"><strong>You only need one BLE method.</strong> Use either the browser tool or the Espressif app, not both.</div>
+        </section>
+
+        <section id="portal" class="guide-section">
+          <h2>3. Open the local installer portal</h2>
+          <ol>
+            <li>Open the access portal link reported by the browser tool, or find the Kiri Bridge IP address in your router after using the phone app.</li>
+            <li>Visit <span class="mono">http://IP:8080/</span>.</li>
+            <li>Complete Step 1 device settings and click <strong>Save and Continue</strong>.</li>
+            <li>Run the optional CN105 smoke test if the device is connected to the indoor unit, or skip it.</li>
+          </ol>
+        </section>
+
+        <section id="firmware" class="guide-section">
+          <h2>4. Install production firmware</h2>
+          <ol>
+            <li>In the OTA upload step, click <strong>Choose Firmware</strong>.</li>
+            <li>Select the latest <a href="https://github.com/DickyT/kiri-homekit/releases/"><span class="mono">kiri_bridge_... .kiri</span> production package</a>.</li>
+            <li>Wait for upload and validation to finish.</li>
+            <li>Review the confirmation dialog, then confirm the reboot.</li>
+            <li>Wait about 30 seconds and reopen <span class="mono">http://IP:8080/</span>.</li>
+          </ol>
+          <div class="guide-callout"><strong>Use the .kiri file, not a .bin file.</strong> The package metadata helps prevent accidental installation of the wrong firmware.</div>
+        </section>
+
+        <section id="homekit" class="guide-section">
+          <h2>5. Pair with Apple Home</h2>
+          <ol>
+            <li>Open the Kiri Bridge portal after production firmware boots.</li>
+            <li>Use the displayed HomeKit pairing code.</li>
+            <li>On iPhone, open the Home app, tap <strong>+</strong>, then <strong>Add Accessory</strong>.</li>
+            <li>Scan the QR code or enter the pairing code manually.</li>
+          </ol>
+          <div class="guide-next">
+            <a class="btn btn-primary" href="ble_provisioning.html">Open BLE WiFi setup →</a>
+            <a class="btn" href="wiki-new-device.html">Choose another setup path</a>
+          </div>
+        </section>
+      </div>
+
+      <aside class="guide-side" aria-label="Guide sections">
+        <h2>On this page</h2>
+        <a href="#before">Before you start</a>
+        <a href="#power">Power the device</a>
+        <a href="#browser">Browser BLE setup</a>
+        <a href="#app">Phone app setup</a>
+        <a href="#portal">Open portal</a>
+        <a href="#firmware">Install firmware</a>
+        <a href="#homekit">Pair HomeKit</a>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

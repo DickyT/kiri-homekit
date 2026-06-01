@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Activate with WiFi Hotspot — Kiri Bridge Wiki</title>
+<meta name="description" content="Activate a new Kiri Bridge in one stop through its installer WiFi hotspot.">
+<link rel="canonical" href="https://kiri.dkt.moe/wiki-new-device-wifi.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">wiki</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="ble_provisioning.html">setup</a>
+      <a href="flash.html">recovery</a>
+      <a href="wiki.html">wiki</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="guide-head">
+    <div class="shell">
+      <a class="guide-back" href="wiki-new-device.html">← Choose another activation method</a>
+      <h1>Activate through the <span class="accent">WiFi hotspot</span>.</h1>
+      <p>Connect directly to the installer hotspot, configure your device, and upload production firmware from one local page. Bluetooth is not required.</p>
+      <div class="guide-meta">
+        <span class="wiki-chip">recommended</span>
+        <span class="wiki-chip">one-stop install</span>
+        <span class="wiki-chip">2.4 GHz WiFi</span>
+        <span class="wiki-chip">production .kiri file</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell guide-layout">
+      <div class="guide-body">
+        <section id="before" class="guide-section">
+          <h2>Before you start</h2>
+          <ul>
+            <li>Download the latest production <a href="https://github.com/DickyT/kiri-homekit/releases/"><span class="mono">kiri_bridge_... .kiri</span> file from GitHub Releases</a>.</li>
+            <li>Use a phone, tablet, or computer that can connect to a WiFi hotspot.</li>
+            <li>Have the name and password for your <strong>2.4 GHz WiFi network</strong> ready.</li>
+          </ul>
+          <div class="guide-callout"><strong>Download the firmware before joining the Kiri Bridge hotspot.</strong> Your phone or computer may temporarily lose internet access while connected to the installer network.</div>
+        </section>
+
+        <section id="power" class="guide-section">
+          <h2>1. Power the device</h2>
+          <ol>
+            <li>Plug Kiri Bridge into USB power, or connect it to the Mitsubishi indoor unit's CN105 port.</li>
+            <li>Wait about 10-20 seconds.</li>
+            <li>Confirm the LED is blinking blue quickly. This means installer setup mode is active.</li>
+          </ol>
+          <h3>If the LED does not blink blue</h3>
+          <ul>
+            <li>Unplug the device, wait 5 seconds, and plug it back in.</li>
+            <li>If the installer still does not start, follow the <a href="wiki-recovery.html">USB recovery guide</a>.</li>
+          </ul>
+        </section>
+
+        <section id="hotspot" class="guide-section">
+          <h2>2. Join the installer hotspot</h2>
+          <ol>
+            <li>Open WiFi settings on your phone, tablet, or computer.</li>
+            <li>Connect to the open network named <span class="mono">PROV_KIRI_XX</span>. The last characters vary by device.</li>
+            <li>Do not enter a password. The installer hotspot is intentionally open.</li>
+            <li>Wait up to 30 seconds for the setup portal to appear automatically.</li>
+            <li>If nothing opens, visit <a href="http://192.168.4.1:8080/"><span class="mono">http://192.168.4.1:8080/</span></a> manually.</li>
+          </ol>
+          <div class="guide-callout"><strong>A “no internet” warning is expected.</strong> Stay connected to <span class="mono">PROV_KIRI_XX</span>; the setup page is served directly by Kiri Bridge.</div>
+        </section>
+
+        <section id="settings" class="guide-section">
+          <h2>3. Save device settings</h2>
+          <ol>
+            <li>In Step 1 of the installer page, enter your device name.</li>
+            <li>Enter the SSID and password for your 2.4 GHz home WiFi.</li>
+            <li>Review the HomeKit pairing code and other defaults. Most users can keep the defaults.</li>
+            <li>Click <strong>Save and Continue</strong>.</li>
+          </ol>
+          <div class="guide-callout"><strong>Your WiFi credentials are stored for the production firmware.</strong> The installer hotspot may remain open until you finish installing and rebooting into the final firmware.</div>
+        </section>
+
+        <section id="probe" class="guide-section">
+          <h2>4. Optionally test CN105</h2>
+          <ol>
+            <li>If Kiri Bridge is already connected to the Mitsubishi indoor unit, click <strong>Run probe</strong> to test the CN105 link.</li>
+            <li>If the device is on your desk or powered only by USB, skip this test.</li>
+            <li>Click <strong>Continue</strong>.</li>
+          </ol>
+        </section>
+
+        <section id="firmware" class="guide-section">
+          <h2>5. Install production firmware</h2>
+          <ol>
+            <li>In the OTA upload step, click <strong>Choose Firmware</strong>.</li>
+            <li>Select the <span class="mono">kiri_bridge_... .kiri</span> production package that you downloaded earlier.</li>
+            <li>Wait for upload and validation to finish.</li>
+            <li>Review the confirmation dialog, then confirm the reboot.</li>
+            <li>Wait about 30 seconds while Kiri Bridge starts the production firmware and joins your home WiFi.</li>
+          </ol>
+          <div class="guide-callout"><strong>Use the .kiri file, not a .bin file.</strong> The package metadata helps prevent accidental installation of the wrong firmware.</div>
+        </section>
+
+        <section id="homekit" class="guide-section">
+          <h2>6. Open Kiri Bridge and pair HomeKit</h2>
+          <ol>
+            <li>Reconnect your phone or computer to your normal home WiFi.</li>
+            <li>Find the Kiri Bridge IP address in your router or DHCP client list.</li>
+            <li>Open <span class="mono">http://IP:8080/</span> in your browser.</li>
+            <li>Use the displayed HomeKit pairing code to add Kiri Bridge in the Apple Home app.</li>
+          </ol>
+          <div class="guide-next">
+            <a class="btn" href="wiki-new-device.html">Choose another setup path</a>
+            <a class="btn" href="wiki-recovery.html">Need recovery?</a>
+          </div>
+        </section>
+      </div>
+
+      <aside class="guide-side" aria-label="Guide sections">
+        <h2>On this page</h2>
+        <a href="#before">Before you start</a>
+        <a href="#power">Power the device</a>
+        <a href="#hotspot">Join hotspot</a>
+        <a href="#settings">Save settings</a>
+        <a href="#probe">Test CN105</a>
+        <a href="#firmware">Install firmware</a>
+        <a href="#homekit">Pair HomeKit</a>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

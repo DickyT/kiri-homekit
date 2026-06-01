@@ -34,7 +34,7 @@
   <section class="tool-head">
     <div class="shell">
       <h1>WiFi <span class="accent">setup</span>.</h1>
-      <p>Send your WiFi credentials to a Kiri Bridge over Bluetooth. The device joins the network and the rest of setup happens on its local web UI. Chrome or Edge required, 2.4 GHz only.</p>
+      <p>Send your WiFi credentials to a Kiri Bridge over Bluetooth. Use desktop Chrome on a Windows PC or Mac. Phone browsers cannot complete this flow because they do not expose the required Web Bluetooth API. The device joins the network and the rest of setup happens on its local web UI. 2.4 GHz only.</p>
     </div>
   </section>
 
@@ -50,7 +50,7 @@
       <div class="tool-step-num">01</div>
       <div>
         <h2>Look for blue.</h2>
-        <p class="hint">A fast blue blink means the Kiri Bridge is advertising over BLE and ready to be configured. If you don't see it, power-cycle the device and wait a few seconds.</p>
+        <p class="hint">A fast blue blink means the Kiri Bridge is advertising over BLE and ready to be configured. Continue from desktop Chrome on a Windows PC or Mac; phone browsers cannot use this setup page. If you don't see the blue blink, power-cycle the device and wait a few seconds.</p>
         <div class="tool-actions">
           <button id="confirm-blue-btn" class="btn btn-primary">LED is blinking blue →</button>
         </div>
@@ -140,6 +140,21 @@
     <p id="success-body">Kiri Bridge accepted the network credentials.</p>
     <div class="modal-actions">
       <button id="success-close-btn" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="environment-modal" class="modal" aria-hidden="true">
+  <div class="modal-backdrop"></div>
+  <div class="modal-panel">
+    <h2>This browser may not work</h2>
+    <p id="environment-body">BLE WiFi setup is designed for desktop Chrome on a Windows PC or Mac.</p>
+    <div class="modal-guide">
+      <strong>Recommended:</strong> use desktop Chrome, or choose the WiFi hotspot setup path instead. You may continue if you understand the warning and want to try this browser anyway.
+    </div>
+    <div class="modal-actions">
+      <a class="btn btn-primary" href="wiki-new-device-wifi.html">Use WiFi hotspot setup</a>
+      <button id="environment-continue-btn" class="btn">Continue anyway</button>
     </div>
   </div>
 </div>
@@ -250,9 +265,33 @@
     $('success-modal').setAttribute('aria-hidden', 'true');
   }
 
+  function environmentWarnings() {
+    const userAgent = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
+    const isDesktopChrome = /Chrome\//.test(userAgent) && !isMobile && !/Edg\/|OPR\/|SamsungBrowser\//.test(userAgent);
+    const warnings = [];
+    if (!isDesktopChrome) warnings.push('This does not appear to be desktop Chrome on a Windows PC or Mac.');
+    if (!('bluetooth' in navigator)) warnings.push('The required Web Bluetooth API is not available in this browser.');
+    if (!window.isSecureContext) warnings.push('Web Bluetooth requires an HTTPS page or localhost.');
+    return warnings;
+  }
+
+  function showEnvironmentWarningIfNeeded() {
+    const warnings = environmentWarnings();
+    if (warnings.length === 0) return;
+    $('environment-body').textContent = warnings.join(' ');
+    $('environment-modal').classList.add('open');
+    $('environment-modal').setAttribute('aria-hidden', 'false');
+  }
+
+  function closeEnvironmentModal() {
+    $('environment-modal').classList.remove('open');
+    $('environment-modal').setAttribute('aria-hidden', 'true');
+  }
+
   function updateBluetoothAvailability() {
     if (!('bluetooth' in navigator)) {
-      setBleState('unavailable — use Chrome or Edge over HTTPS', 'bad');
+      setBleState('unavailable — use desktop Chrome over HTTPS', 'bad');
       $('select-device-btn').disabled = true;
       return;
     }
@@ -497,7 +536,9 @@
   $('clear-log-btn').addEventListener('click', () => { $('log').textContent = ''; });
   $('error-close-btn').addEventListener('click', closeErrorModal);
   $('success-close-btn').addEventListener('click', closeSuccessModal);
+  $('environment-continue-btn').addEventListener('click', closeEnvironmentModal);
   log('Kiri Bridge WiFi setup ready.');
+  showEnvironmentWarningIfNeeded();
 </script>
 </body>
 </html>
