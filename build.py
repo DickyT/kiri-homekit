@@ -712,6 +712,7 @@ def main() -> int:
 
     app = "main"
     board = "atom-lite"
+    board_explicit = False
     project_name_override: str | None = None
     normalized_argv: list[str] = []
     skip = False
@@ -735,6 +736,7 @@ def main() -> int:
             if index + 1 >= len(argv):
                 fail("Missing value after --board")
             board = argv[index + 1]
+            board_explicit = True
             skip = True
             continue
         normalized_argv.append(arg)
@@ -789,7 +791,7 @@ def main() -> int:
         return serial_log(parser.parse_args(argv[1:]))
 
     if len(argv) > 0 and argv[0] in ("buildall", "build-all"):
-        return build_all(quiet_first=quiet_first, board=board)
+        return build_all(quiet_first=quiet_first, board=board if board_explicit else "all")
 
     args = argv or ["build"]
     if board == "all":
