@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "board_profile.h"
 #include "esp_err.h"
 #include "esp_log.h"
 
@@ -28,9 +29,9 @@ struct Settings {
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
     bool useRealCn105 = true;
-    int statusLedPin = 27;
-    int cn105RxPin = 26;
-    int cn105TxPin = 32;
+    int statusLedPin = board_profile::kDefaultStatusLedPin;
+    int cn105RxPin = board_profile::kDefaultCn105RxPin;
+    int cn105TxPin = board_profile::kDefaultCn105TxPin;
     int cn105DataBits = 8;
     char cn105Parity = 'E';
     int cn105StopBits = 1;

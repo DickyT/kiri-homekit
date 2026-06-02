@@ -21,4 +21,5 @@ set(EXTRA_COMPONENT_DIRS
     ${HOMEKIT_PATH}/components/homekit)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.${IDF_TARGET})
 project(${KIRI_PROJECT_NAME})

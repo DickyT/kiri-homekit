@@ -16,8 +16,12 @@ export type KiriManifest = {
   format: string;
   project: string;
   product?: string;
+  displayName?: string;
   variant: 'app' | 'installer';
   build_app?: string;
+  board?: string;
+  boardName?: string;
+  boardTarget?: string;
   project_name?: string;
   version?: string;
   target?: string;

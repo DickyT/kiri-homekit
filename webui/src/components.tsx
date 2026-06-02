@@ -135,6 +135,12 @@ function formatOtaVariant(value: string | undefined): string {
   return value || "--";
 }
 
+function formatOtaBoard(result: OtaUploadResult): string {
+  const board = result.board_name || result.board || "--";
+  const target = result.target || "--";
+  return `${board} (${target})`;
+}
+
 export function OtaConfirmModal({
   result,
   applying = false,
@@ -178,6 +184,7 @@ export function OtaConfirmModal({
         </div>
         <div class="modal-card">
           <div class="section-label">Target</div>
+          <SpecRow k="Board">{formatOtaBoard(result)}</SpecRow>
           <SpecRow k="Partition">{result.partition ?? "--"}</SpecRow>
           <SpecRow k="Size">{formatOtaBytes(result.bytes)}</SpecRow>
           <SpecRow k="Status">{applying ? "Applying" : "Ready to reboot"}</SpecRow>

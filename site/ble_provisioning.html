@@ -18,7 +18,7 @@
   <div class="nav-inner">
     <a class="brand" href="index.html">
       <span class="brand-mark" aria-hidden="true"></span>
-      Kiri Bridge<span class="brand-page">setup</span>
+      Kiri Bridge<span class="brand-page">BLE</span>
     </a>
     <div class="nav-links">
       <a href="index.html">home</a>
@@ -35,6 +35,20 @@
     <div class="shell">
       <h1>WiFi <span class="accent">setup</span>.</h1>
       <p>Send your WiFi credentials to a Kiri Bridge over Bluetooth. Use desktop Chrome on a Windows PC or Mac. Phone browsers cannot complete this flow because they do not expose the required Web Bluetooth API. The device joins the network and the rest of setup happens on its local web UI. 2.4 GHz only.</p>
+    </div>
+  </section>
+
+  <section class="tool-recommend">
+    <div class="shell tool-recommend-inner">
+      <div>
+        <div class="tool-recommend-kicker">Recommended first</div>
+        <h2>Use the WiFi hotspot setup if you can.</h2>
+        <p>The installer hotspot is simpler and works from phones, tablets, and computers. Use this BLE page only if you specifically want to provision WiFi over Bluetooth first.</p>
+      </div>
+      <div class="tool-recommend-actions">
+        <a class="btn btn-primary" href="wiki-new-device-wifi.html">Use WiFi hotspot →</a>
+        <a class="btn" href="#step-blue">Continue with BLE</a>
+      </div>
     </div>
   </section>
 
@@ -181,7 +195,7 @@
   } from 'https://cdn.jsdelivr.net/npm/esp-ble-prov@2.0.1/dist/index.esm.min.js';
 
   const $ = id => document.getElementById(id);
-  const serviceUuid = '021a9004-0382-4aea-bff4-6b3f1c5adfb4';
+  const serviceUuid = '1775244d-6b43-439b-877c-060f2d9bed07';
   const provisioningPop = 'abcd1234';
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();

@@ -396,8 +396,9 @@ void handleButton(int64_t now_us) {
 void provisioningTask(void*) {
     state.taskRunning = true;
     ESP_LOGI(TAG,
-             "Provisioning button task started on GPIO%d (Atom Lite button)",
-             static_cast<int>(app_config::kProvisioningButtonPin));
+             "Provisioning button task started on GPIO%d (%s button)",
+             static_cast<int>(app_config::kProvisioningButtonPin),
+             app_config::kBoardName);
 
     while (true) {
         const int64_t now_us = esp_timer_get_time();

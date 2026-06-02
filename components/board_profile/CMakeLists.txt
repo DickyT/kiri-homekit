@@ -8,4 +8,4 @@
 # Licensed under terms of the GPL-3.0 License.
 
 idf_component_register(INCLUDE_DIRS "include"
-                       REQUIRES board_profile esp_driver_uart log)
+                       REQUIRES esp_driver_gpio)

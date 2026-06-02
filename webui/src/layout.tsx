@@ -124,7 +124,15 @@ function PollingControl({ placement = "tabs" }: { placement?: "tabs" | "top" }):
 }
 
 export function SiteFooter(): JSX.Element {
-  const version = useComputed(() => status.value?.version ?? "--");
+  const meta = useComputed(() => {
+    const s = status.value;
+    const board = s?.board?.name ?? "Unknown board";
+    const target = s?.board?.target ?? "unknown target";
+    return {
+      version: s?.version ?? "--",
+      board: `${board} (${target})`,
+    };
+  });
   return (
     <footer class="site-footer">
       <div class="footer-brand">
@@ -133,7 +141,8 @@ export function SiteFooter(): JSX.Element {
       </div>
       <div class="footer-meta">
         <a href="https://kiri.dkt.moe" target="_blank" rel="noopener noreferrer">kiri.dkt.moe</a>
-        <span>v<b>{version.value}</b></span>
+        <span>{meta.value.board}</span>
+        <span>v<b>{meta.value.version}</b></span>
       </div>
     </footer>
   );

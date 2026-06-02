@@ -18,7 +18,6 @@
     </a>
     <div class="nav-links">
       <a href="index.html">home</a>
-      <a href="ble_provisioning.html">setup</a>
       <a href="flash.html">recovery</a>
       <a href="wiki.html">wiki</a>
       <a href="https://github.com/DickyT/kiri-homekit">github</a>
@@ -74,8 +73,7 @@
             <li>Open WiFi settings on your phone, tablet, or computer.</li>
             <li>Connect to the open network named <span class="mono">PROV_KIRI_XX</span>. The last characters vary by device.</li>
             <li>Do not enter a password. The installer hotspot is intentionally open.</li>
-            <li>Wait up to 30 seconds for the setup portal to appear automatically.</li>
-            <li>If nothing opens, visit <a href="http://192.168.4.1:8080/"><span class="mono">http://192.168.4.1:8080/</span></a> manually.</li>
+            <li>After WiFi shows connected, open <a href="http://192.168.4.1:8080/"><span class="mono">http://192.168.4.1:8080/</span></a> manually.</li>
           </ol>
           <div class="guide-callout"><strong>A “no internet” warning is expected.</strong> Stay connected to <span class="mono">PROV_KIRI_XX</span>; the setup page is served directly by Kiri Bridge.</div>
         </section>
@@ -107,7 +105,7 @@
             <li>Select the <span class="mono">kiri_bridge_... .kiri</span> production package that you downloaded earlier.</li>
             <li>Wait for upload and validation to finish.</li>
             <li>Review the confirmation dialog, then confirm the reboot.</li>
-            <li>Wait about 30 seconds while Kiri Bridge starts the production firmware and joins your home WiFi.</li>
+            <li>When the reboot dialog finishes, reconnect your phone or computer to your normal home WiFi.</li>
           </ol>
           <div class="guide-callout"><strong>Use the .kiri file, not a .bin file.</strong> The package metadata helps prevent accidental installation of the wrong firmware.</div>
         </section>

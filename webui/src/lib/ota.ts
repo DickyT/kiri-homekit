@@ -1,6 +1,6 @@
 // Kiri Bridge — shared OTA upload helper.
 //
-// Used by both the production admin page and the installer captive portal.
+// Used by both the production admin page and the installer setup page.
 // They differ only in which manifest variants they're willing to flash:
 //   admin: ["app"]                    — only production app firmware
 //   installer: ["app", "installer"]   — either production app or the installer itself
@@ -24,6 +24,9 @@ export type OtaUploadResult = {
   bytes?: number;
   partition?: string;
   variant?: string;
+  target?: string;
+  board?: string;
+  board_name?: string;
   current_version?: string;
   uploaded_version?: string;
   rollback?: boolean;
@@ -71,6 +74,9 @@ export async function validateAndUpload(
   // wrong partition layout build" before we touch the OTA partition.
   const otaInfo = await (await fetch("/api/ota/info")).json();
   if (!otaInfo.ok) throw new Error(otaInfo.error ?? "OTA info request failed");
+  if (manifest.target && otaInfo.target && manifest.target !== otaInfo.target) {
+    throw new Error(`Package target ${manifest.target} does not match this device target ${otaInfo.target}.`);
+  }
   if (!otaInfo.next_partition || appBytes.byteLength > Number(otaInfo.next_partition.size ?? 0)) {
     throw new Error("App is larger than the next OTA partition.");
   }
@@ -85,6 +91,7 @@ export async function validateAndUpload(
     xhr.open("POST", "/api/ota/upload");
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("X-Kiri-Sha256", expectedSha);
+    if (manifest.target) xhr.setRequestHeader("X-Kiri-Target", manifest.target);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && opts.onProgress) opts.onProgress(Math.round((e.loaded / e.total) * 100));
     };
@@ -93,7 +100,12 @@ export async function validateAndUpload(
       try { result = JSON.parse(xhr.responseText || "{}"); } catch {}
       if (xhr.status >= 200 && xhr.status < 300 && result?.ok) {
         opts.onProgress?.(100);
-        resolve(result as OtaUploadResult);
+        resolve({
+          ...result,
+          target: manifest.target,
+          board: manifest.board,
+          board_name: manifest.boardName,
+        } as OtaUploadResult);
       } else {
         reject(new Error(result?.error ?? xhr.responseText ?? `HTTP ${xhr.status}`));
       }

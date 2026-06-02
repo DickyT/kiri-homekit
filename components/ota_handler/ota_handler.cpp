@@ -6,6 +6,7 @@
 
 #include "ota_handler.h"
 
+#include "board_profile.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -193,6 +194,17 @@ bool readShaHeader(httpd_req_t* req, char* out_lower_hex_65, bool* present) {
     return std::strlen(out_lower_hex_65) == 64;
 }
 
+bool readTargetHeader(httpd_req_t* req, char* out_target, size_t out_len, bool* present) {
+    if (out_target == nullptr || out_len == 0 || present == nullptr) return false;
+    out_target[0] = '\0';
+    *present = false;
+    if (httpd_req_get_hdr_value_str(req, "X-Kiri-Target", out_target, out_len) != ESP_OK) {
+        return true;
+    }
+    *present = true;
+    return out_target[0] != '\0';
+}
+
 esp_err_t otaInfoHandler(httpd_req_t* req) {
     const esp_partition_t* running_partition = esp_ota_get_running_partition();
     const esp_partition_t* boot_partition = esp_ota_get_boot_partition();
@@ -238,12 +250,14 @@ esp_err_t otaInfoHandler(httpd_req_t* req) {
     if (vp + 1 < sizeof(variants_json)) variants_json[vp++] = ']';
     variants_json[vp] = '\0';
 
-    char body[896] = {};
+    char body[1152] = {};
     std::snprintf(body,
                   sizeof(body),
                   "{\"ok\":true,"
                   "\"project_name\":\"%s\","
                   "\"version\":\"%s\","
+                  "\"target\":\"%s\","
+                  "\"board\":{\"id\":\"%s\",\"name\":\"%s\"},"
                   "\"accepted_variants\":%s,"
                   "\"running_partition\":%s,"
                   "\"boot_partition\":%s,"
@@ -251,6 +265,9 @@ esp_err_t otaInfoHandler(httpd_req_t* req) {
                   "\"partitions\":{\"ota_0\":%s,\"ota_1\":%s}}",
                   project_name,
                   version,
+                  board_profile::kIdfTarget,
+                  board_profile::kBoardId,
+                  board_profile::kBoardName,
                   variants_json,
                   running_json,
                   boot_json,
@@ -269,6 +286,21 @@ esp_err_t otaUploadHandler(httpd_req_t* req) {
     bool have_expected_sha = false;
     if (!readShaHeader(req, expected_sha_hex, &have_expected_sha)) {
         return sendJsonError(req, "X-Kiri-Sha256 header must be 64 lowercase hex chars");
+    }
+
+    char uploaded_target[24] = {};
+    bool have_uploaded_target = false;
+    if (!readTargetHeader(req, uploaded_target, sizeof(uploaded_target), &have_uploaded_target)) {
+        return sendJsonError(req, "X-Kiri-Target header is invalid");
+    }
+    if (have_uploaded_target && std::strcmp(uploaded_target, board_profile::kIdfTarget) != 0) {
+        char message[160] = {};
+        std::snprintf(message,
+                      sizeof(message),
+                      "firmware target '%s' does not match this device target '%s'",
+                      uploaded_target,
+                      board_profile::kIdfTarget);
+        return sendJsonError(req, message);
     }
 
     const esp_partition_t* running_partition = esp_ota_get_running_partition();

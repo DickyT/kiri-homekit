@@ -27,7 +27,7 @@ command line tools.
 
 The intended user path assumes a prebuilt Kiri Bridge kit:
 
-- M5Stack ATOM Lite controller
+- M5Stack ATOM Lite or AtomS3 Lite controller
 - two CN105 cable options
 - pre-flashed Kiri Bridge installer or firmware
 - browser-based setup and recovery flow

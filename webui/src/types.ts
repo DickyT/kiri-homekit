@@ -84,6 +84,18 @@ export type DeviceConfig = {
   poll_off_ms?: number;
 };
 
+export type BoardInfo = {
+  id?: string;
+  name?: string;
+  target?: string;
+  defaults?: {
+    led_pin?: number;
+    cn105_rx_pin?: number;
+    cn105_tx_pin?: number;
+    provisioning_button_gpio?: number;
+  };
+};
+
 export type FilesystemInfo = {
   used_bytes: number;
   total_bytes: number;
@@ -93,6 +105,7 @@ export type Status = {
   ok?: boolean;
   device: string;
   version: string;
+  board?: BoardInfo;
   uptime_ms: number;
   wifi: WifiInfo;
   cn105: Cn105Block;

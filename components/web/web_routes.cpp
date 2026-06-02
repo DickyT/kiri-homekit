@@ -12,6 +12,7 @@
 #include "web_routes.h"
 
 #include "app_config.h"
+#include "board_profile.h"
 #include "build_info.h"
 #include "cn105_core.h"
 #include "cn105_transport.h"
@@ -557,6 +558,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   "\"device\":\"%s\","
                   "\"version\":\"%s\","
                   "\"phase\":\"%s\","
+                  "\"board\":{\"id\":\"%s\",\"name\":\"%s\",\"target\":\"%s\",\"defaults\":{\"led_pin\":%d,\"cn105_rx_pin\":%d,\"cn105_tx_pin\":%d,\"provisioning_button_gpio\":%d}},"
                   "\"server_time_unix_ms\":%llu,"
                   "\"boot_time_unix_ms\":%llu,"
                   "\"boot_time_valid\":%s,"
@@ -596,6 +598,13 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   esc_device_name,
                   esc_version,
                   app_config::kPhaseName,
+                  app_config::kBoardId,
+                  app_config::kBoardName,
+                  app_config::kIdfTarget,
+                  board_profile::kDefaultStatusLedPin,
+                  board_profile::kDefaultCn105RxPin,
+                  board_profile::kDefaultCn105TxPin,
+                  app_config::kProvisioningButtonPin,
                   static_cast<unsigned long long>(server_time_unix_ms),
                   static_cast<unsigned long long>(boot_time_unix_ms),
                   server_time_valid ? "true" : "false",

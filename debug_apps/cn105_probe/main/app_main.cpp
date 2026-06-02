@@ -15,6 +15,7 @@
 #include <cstring>
 #include <string>
 
+#include "board_profile.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_app_desc.h"
@@ -59,16 +60,12 @@ constexpr uint32_t kRxByteTimeoutMs = 140;
 constexpr int WIFI_CONNECTED_BIT = BIT0;
 constexpr const char* kDeviceCfgNamespace = "device_cfg";
 constexpr const char* kProvisioningPop = "abcd1234";
-constexpr int kAtomLiteStatusLedGpio = 27;
 constexpr uint16_t kHttpPrimaryPort = 8080;
-constexpr uint16_t kDnsPort = 53;
 constexpr char kApIp[] = "192.168.4.1";
-constexpr char kCaptivePortalUrl[] = "http://192.168.4.1:8080/";
 
 EventGroupHandle_t wifi_event_group = nullptr;
 esp_netif_t* ap_netif = nullptr;
 httpd_handle_t web_server = nullptr;
-TaskHandle_t dns_task = nullptr;
 char wifi_ip[16] = "0.0.0.0";
 char wifi_ssid[33] = "";
 char wifi_password[65] = "";
@@ -95,9 +92,9 @@ struct InstallerSettings {
     char hk_serial[64] = "KIRI-BRIDGE";
     char hk_setupid[5] = "DKT1";
     bool use_real = true;
-    int led_pin = 27;
-    int rx_pin = 26;
-    int tx_pin = 32;
+    int led_pin = board_profile::kDefaultStatusLedPin;
+    int rx_pin = board_profile::kDefaultCn105RxPin;
+    int tx_pin = board_profile::kDefaultCn105TxPin;
     int baud = 2400;
     int data_bits = kStableCn105DataBits;
     char parity = kStableCn105Parity;
@@ -112,8 +109,8 @@ struct InstallerSettings {
 struct ProbeResult {
     bool ran = false;
     bool found = false;
-    int rx_pin = 26;
-    int tx_pin = 32;
+    int rx_pin = board_profile::kDefaultCn105RxPin;
+    int tx_pin = board_profile::kDefaultCn105TxPin;
     int baud = 2400;
     uint8_t profile = 1;
     uint8_t connect = 0x5A;
@@ -259,11 +256,11 @@ esp_err_t sendJsonError(httpd_req_t* req, const char* error) {
 }
 
 bool validGpio(int value) {
-    return value >= 0 && value <= 39;
+    return board_profile::validGpio(value);
 }
 
 bool validOutputGpio(int value) {
-    return value >= 0 && value <= 33;
+    return board_profile::validOutputGpio(value);
 }
 
 bool validBaud(int value) {
@@ -762,12 +759,12 @@ void installerLedTask(void*) {
     bool blink_on = false;
     while (true) {
         if (installer_led_mode == InstallerLedMode::Provisioned) {
-            setLedColor(kAtomLiteStatusLedGpio, 0, 255, 0);
+            setLedColor(board_profile::kDefaultStatusLedPin, 0, 255, 0);
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
         blink_on = !blink_on;
-        setLedColor(kAtomLiteStatusLedGpio, 0, 0, blink_on ? 255 : 0);
+        setLedColor(board_profile::kDefaultStatusLedPin, 0, 0, blink_on ? 255 : 0);
         vTaskDelay(pdMS_TO_TICKS(450));
     }
 }
@@ -802,7 +799,18 @@ esp_err_t statusHandler(httpd_req_t* req) {
     body += kProvisioningPop;
     body += "\"},\"version\":\"";
     body += jsonEscape(esp_app_get_description()->version);
-    body += "\",\"defaults\":";
+    body += "\",\"board\":{\"id\":\"";
+    body += board_profile::kBoardId;
+    body += "\",\"name\":\"";
+    body += board_profile::kBoardName;
+    body += "\",\"target\":\"";
+    body += board_profile::kIdfTarget;
+    body += "\"";
+    body += ",\"defaults\":{\"led_pin\":" + std::to_string(board_profile::kDefaultStatusLedPin);
+    body += ",\"rx_pin\":" + std::to_string(board_profile::kDefaultCn105RxPin);
+    body += ",\"tx_pin\":" + std::to_string(board_profile::kDefaultCn105TxPin);
+    body += "}}";
+    body += ",\"defaults\":";
     body += settingsJson(settings);
     body += ",\"probe\":{\"ran\":";
     body += last_probe.ran ? "true" : "false";
@@ -822,8 +830,8 @@ esp_err_t probeHandler(httpd_req_t* req) {
         return sendJsonError(req, "failed to read body");
     }
     char value[32] = {};
-    int rx_pin = 26;
-    int tx_pin = 32;
+    int rx_pin = board_profile::kDefaultCn105RxPin;
+    int tx_pin = board_profile::kDefaultCn105TxPin;
     if (formValue(body, "rx_pin", value, sizeof(value))) rx_pin = std::atoi(value);
     if (formValue(body, "tx_pin", value, sizeof(value))) tx_pin = std::atoi(value);
     if (!validGpio(rx_pin) || !validOutputGpio(tx_pin)) {
@@ -870,7 +878,14 @@ esp_err_t ledTestHandler(httpd_req_t* req) {
     if (!readBody(req, body, sizeof(body))) {
         return sendJsonError(req, "failed to read body");
     }
-    const int pin = kAtomLiteStatusLedGpio;
+    char value[32] = {};
+    int pin = board_profile::kDefaultStatusLedPin;
+    if (formValue(body, "led_pin", value, sizeof(value))) {
+        pin = std::atoi(value);
+    }
+    if (!validOutputGpio(pin)) {
+        return sendJsonError(req, "invalid LED GPIO pin");
+    }
     xTaskCreate(ledTestTask, "led_test", 3072, reinterpret_cast<void*>(static_cast<intptr_t>(pin)), 3, nullptr);
     return sendText(req, "application/json", "{\"ok\":true,\"message\":\"LED test started\"}");
 }
@@ -893,8 +908,8 @@ void registerRoutes(httpd_handle_t handle) {
         handle,
         {kAcceptedVariants, sizeof(kAcceptedVariants) / sizeof(kAcceptedVariants[0])}));
 
-    // Captive portal probes use many URLs. Serve the installer shell for all
-    // GET misses. Register this last so the explicit /api/* routes win.
+    // Serve the installer shell for browser refreshes and client-side routes.
+    // Register this last so the explicit /api/* routes win.
     const httpd_uri_t fallback = {.uri = "/*", .method = HTTP_GET, .handler = indexHandler, .user_ctx = nullptr};
     ESP_ERROR_CHECK(httpd_register_uri_handler(handle, &fallback));
 }
@@ -919,105 +934,6 @@ void startWebServer() {
              static_cast<unsigned>(config.server_port),
              wifi_ip,
              static_cast<unsigned>(config.server_port));
-}
-
-void captiveDnsTask(void*) {
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    if (sock < 0) {
-        ESP_LOGE(TAG, "Failed to create captive DNS socket");
-        dns_task = nullptr;
-        vTaskDelete(nullptr);
-    }
-
-    sockaddr_in listen_addr = {};
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_port = htons(kDnsPort);
-    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(sock, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)) < 0) {
-        ESP_LOGE(TAG, "Failed to bind captive DNS socket");
-        closesocket(sock);
-        dns_task = nullptr;
-        vTaskDelete(nullptr);
-    }
-
-    uint8_t query[512] = {};
-    uint8_t response[512] = {};
-    const uint32_t ap_addr = inet_addr(kApIp);
-    while (true) {
-        sockaddr_in source_addr = {};
-        socklen_t source_len = sizeof(source_addr);
-        const int query_len = recvfrom(sock,
-                                       query,
-                                       sizeof(query),
-                                       0,
-                                       reinterpret_cast<sockaddr*>(&source_addr),
-                                       &source_len);
-        if (query_len < 12) {
-            continue;
-        }
-
-        memcpy(response, query, query_len);
-        response[2] = 0x81;  // response, recursion desired/available
-        response[3] = 0x80;
-        response[6] = 0x00;  // ANCOUNT = 1
-        response[7] = 0x01;
-
-        size_t out = static_cast<size_t>(query_len);
-        if (out + 16 > sizeof(response)) {
-            continue;
-        }
-        response[out++] = 0xC0;  // pointer to the original QNAME at offset 12
-        response[out++] = 0x0C;
-        response[out++] = 0x00;  // TYPE A
-        response[out++] = 0x01;
-        response[out++] = 0x00;  // CLASS IN
-        response[out++] = 0x01;
-        response[out++] = 0x00;  // TTL 60 seconds
-        response[out++] = 0x00;
-        response[out++] = 0x00;
-        response[out++] = 0x3C;
-        response[out++] = 0x00;  // RDLENGTH 4
-        response[out++] = 0x04;
-        memcpy(response + out, &ap_addr, sizeof(ap_addr));
-        out += sizeof(ap_addr);
-
-        sendto(sock,
-               response,
-               out,
-               0,
-               reinterpret_cast<sockaddr*>(&source_addr),
-               source_len);
-    }
-}
-
-void startCaptiveDns() {
-    if (dns_task != nullptr) {
-        return;
-    }
-    xTaskCreate(captiveDnsTask, "captive_dns", 4096, nullptr, 4, &dns_task);
-    ESP_LOGI(TAG, "Captive DNS started for AP clients");
-}
-
-void configureCaptiveDhcpOptions() {
-    if (ap_netif == nullptr) {
-        return;
-    }
-    esp_netif_dns_info_t dns = {};
-    dns.ip.type = ESP_IPADDR_TYPE_V4;
-    dns.ip.u_addr.ip4.addr = inet_addr(kApIp);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns));
-
-    uint8_t offer_dns = 1;
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_option(ap_netif,
-                                                         ESP_NETIF_OP_SET,
-                                                         ESP_NETIF_DOMAIN_NAME_SERVER,
-                                                         &offer_dns,
-                                                         sizeof(offer_dns)));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_option(ap_netif,
-                                                         ESP_NETIF_OP_SET,
-                                                         ESP_NETIF_CAPTIVEPORTAL_URI,
-                                                         const_cast<char*>(kCaptivePortalUrl),
-                                                         std::strlen(kCaptivePortalUrl)));
 }
 
 void configureSoftAp() {
@@ -1094,7 +1010,6 @@ void startWifiProvisioning() {
     esp_netif_create_default_wifi_sta();
     ap_netif = esp_netif_create_default_wifi_ap();
     buildProvisioningServiceName(provisioning_service_name, sizeof(provisioning_service_name));
-    configureCaptiveDhcpOptions();
 
     wifi_init_config_t wifi_cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_cfg));
@@ -1119,7 +1034,6 @@ void startWifiProvisioning() {
     const wifi_prov_security1_params_t* security_params = kProvisioningPop;
     ESP_ERROR_CHECK(wifi_prov_mgr_start_provisioning(WIFI_PROV_SECURITY_1, security_params, provisioning_service_name, nullptr));
     configureSoftAp();
-    startCaptiveDns();
     startWebServer();
     ESP_LOGI(TAG,
              "BLE provisioning started. Use Espressif app, service name: %s security=1 pop=%s",
@@ -1139,5 +1053,8 @@ extern "C" void app_main(void) {
 
     startInstallerStatusLed();
     startWifiProvisioning();
-    ESP_LOGI(TAG, "Installer WebUI is available on SoftAP %s at http://%s/", provisioning_service_name, kApIp);
+    ESP_LOGI(TAG, "Installer WebUI is available on SoftAP %s at http://%s:%u/",
+             provisioning_service_name,
+             kApIp,
+             static_cast<unsigned>(kHttpPrimaryPort));
 }

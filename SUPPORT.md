@@ -16,7 +16,7 @@ please include:
 
 - firmware version
 - whether you are running installer or production firmware
-- M5Stack ATOM Lite or other ESP32 hardware details
+- M5Stack ATOM Lite / AtomS3 Lite or other ESP32 hardware details
 - Mitsubishi indoor unit model if known
 - whether the LED is blinking blue, solid green, or doing something else
 - what browser and operating system you used for provisioning or flashing

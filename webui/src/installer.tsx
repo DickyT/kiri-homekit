@@ -1,6 +1,7 @@
-// Kiri Bridge — Installer captive-portal SPA.
-// Single self-contained bundle inlined into the installer firmware. Captive
-// portals can't reach CDNs so this file imports nothing external at runtime.
+// Kiri Bridge — installer setup SPA.
+// Single self-contained bundle inlined into the installer firmware. The
+// installer hotspot may not have internet access, so this imports nothing
+// external at runtime.
 
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -17,6 +18,12 @@ type InstallerStatus = {
   version?: string;
   wifi: { connected: boolean; ssid?: string; ip?: string; ap_ssid: string; ap_ip: string };
   provisioning: { service_name: string; security: string; pop: string };
+  board?: {
+    id?: string;
+    name?: string;
+    target?: string;
+    defaults?: { led_pin?: number; rx_pin?: number; tx_pin?: number };
+  };
   defaults: Record<string, string | number | boolean>;
   probe?: { ran: boolean; found: boolean; rx_pin?: number; tx_pin?: number; baud?: number };
 };
@@ -67,6 +74,11 @@ function randomHomeKitCode(): string {
   crypto.getRandomValues(b);
   const d = Array.from(b).map((x) => String(x % 10));
   return d.slice(0, 4).join("") + "-" + d.slice(4).join("");
+}
+
+function boardDefault(status: InstallerStatus | null, key: "led_pin" | "rx_pin" | "tx_pin", fallback: string): string {
+  const value = status?.board?.defaults?.[key];
+  return value === undefined ? fallback : String(value);
 }
 
 // ---------- installer app ----------
@@ -135,7 +147,7 @@ function InstallerApp(): JSX.Element {
       const j = await (await fetch("/api/led-test", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ led_pin: form.led_pin ?? "27" }),
+        body: new URLSearchParams({ led_pin: form.led_pin ?? boardDefault(status, "led_pin", DEFAULTS.led_pin) }),
       })).json();
       setStep1Out(JSON.stringify(j, null, 2));
     } catch (e: any) {
@@ -175,7 +187,10 @@ function InstallerApp(): JSX.Element {
       const j = await (await fetch("/api/probe", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ rx_pin: form.rx_pin ?? "26", tx_pin: form.tx_pin ?? "32" }),
+        body: new URLSearchParams({
+          rx_pin: form.rx_pin ?? boardDefault(status, "rx_pin", DEFAULTS.rx_pin),
+          tx_pin: form.tx_pin ?? boardDefault(status, "tx_pin", DEFAULTS.tx_pin),
+        }),
       })).json();
       setProbeOut(JSON.stringify(j, null, 2));
       if (j.ok && j.result) update("baud", String(j.result.baud));
@@ -353,6 +368,7 @@ function InstallerApp(): JSX.Element {
           </div>
           <div class="footer-meta">
             <a href="https://kiri.dkt.moe" target="_blank" rel="noopener noreferrer">kiri.dkt.moe</a>
+            <span>{status?.board?.name ?? "Unknown board"} ({status?.board?.target ?? "unknown target"})</span>
             <span>v<b>{status?.version ?? "--"}</b></span>
           </div>
         </footer>
@@ -372,8 +388,8 @@ function InstallerApp(): JSX.Element {
             <div class="modal-header"><div><h2>CN105 Advanced</h2><div class="subtitle modal-subtitle">Serial line settings. Confirm only updates the local Step 1 draft; click Save and Continue afterward to write NVS.</div></div></div>
             <div class="danger-banner"><strong>Dangerous</strong>If CN105 works now, don't change these unless you're debugging hardware.</div>
             <div class="grid2">
-              <Field label="RX GPIO"><input type="number" min={0} max={39} step={1} value={form.rx_pin} onInput={(e) => update("rx_pin", (e.target as HTMLInputElement).value)} /></Field>
-              <Field label="TX GPIO"><input type="number" min={0} max={33} step={1} value={form.tx_pin} onInput={(e) => update("tx_pin", (e.target as HTMLInputElement).value)} /></Field>
+              <Field label="RX GPIO"><input type="number" min={0} step={1} value={form.rx_pin} onInput={(e) => update("rx_pin", (e.target as HTMLInputElement).value)} /></Field>
+              <Field label="TX GPIO"><input type="number" min={0} step={1} value={form.tx_pin} onInput={(e) => update("tx_pin", (e.target as HTMLInputElement).value)} /></Field>
               <Field label="Baud Rate">
                 <select value={form.baud} onChange={(e) => update("baud", (e.target as HTMLSelectElement).value)}>
                   <option value="2400">2400</option><option value="4800">4800</option><option value="9600">9600</option>

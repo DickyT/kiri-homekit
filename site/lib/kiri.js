@@ -2,8 +2,8 @@
 //
 // .kiri files are ZIP archives in STORE mode (no compression). This parser
 // only handles store mode and rejects compressed entries; that lets us avoid
-// pulling in JSZip / pako in any client (firmware admin, installer captive
-// portal, public flash.html). All callers — site/flash.html, webui Admin,
+// pulling in JSZip / pako in any client (firmware admin, installer setup,
+// public flash.html). All callers — site/flash.html, webui Admin,
 // webui installer — import this same file.
 //
 // Format reminders (PKZIP APPNOTE.TXT, simplified):

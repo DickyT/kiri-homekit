@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "board_profile.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 
@@ -18,6 +19,9 @@ namespace app_config {
 
 inline constexpr char kDeviceName[] = "Kiri Bridge";
 inline constexpr char kPhaseName[] = "ESP-IDF stable baseline";
+inline constexpr const char* kBoardId = board_profile::kBoardId;
+inline constexpr const char* kBoardName = board_profile::kBoardName;
+inline constexpr const char* kIdfTarget = board_profile::kIdfTarget;
 
 inline constexpr esp_log_level_t kDefaultLogLevel = ESP_LOG_ERROR;
 inline constexpr uint32_t kHeartbeatIntervalMs = 5000;
@@ -52,7 +56,7 @@ inline constexpr char kPersistentLogTimezone[] = "PST8PDT,M3.2.0,M11.1.0";
 inline constexpr bool kWifiDisablePowerSave = true;
 inline constexpr uint32_t kWifiConnectTimeoutMs = 15000;
 inline constexpr uint32_t kWifiReconnectIntervalMs = 10000;
-inline constexpr int kProvisioningButtonPin = 39;
+inline constexpr int kProvisioningButtonPin = board_profile::kProvisioningButtonPin;
 inline constexpr uint32_t kProvisioningButtonLongPressMs = 3000;
 inline constexpr uint32_t kProvisioningSessionMs = 5 * 60 * 1000;
 inline constexpr uint32_t kProvisioningLoopIntervalMs = 50;

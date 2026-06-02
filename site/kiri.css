@@ -527,6 +527,43 @@ p{margin:0;color:var(--ink-dim);max-width:62ch}
 .tool-meta span{padding:6px 0}
 .tool-meta strong{color:var(--ink-dim);font-weight:500;margin-right:6px}
 
+.tool-recommend{
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(90deg,rgba(255,120,73,.12),rgba(255,120,73,.03) 48%,transparent);
+}
+.tool-recommend-inner{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:28px;
+  padding:24px 0;
+}
+.tool-recommend-kicker{
+  margin-bottom:8px;
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.tool-recommend h2{
+  font-size:22px;
+  font-weight:400;
+  letter-spacing:-.01em;
+}
+.tool-recommend p{
+  max-width:62ch;
+  margin-top:8px;
+  color:var(--ink-dim);
+  font-size:14px;
+}
+.tool-recommend-actions{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  flex-shrink:0;
+}
+
 /* Tool status row (under tool-head) — three live dots */
 .tool-status{
   display:flex;
@@ -808,6 +845,9 @@ details.log pre{
   .field-grid{grid-template-columns:1fr}
   .nav-links{gap:16px}
   .nav-links a{font-size:12px}
+  .tool-recommend-inner{align-items:flex-start;flex-direction:column}
+  .tool-recommend-actions{width:100%}
+  .tool-recommend-actions .btn{justify-content:center;width:100%}
   .step-row,.tool-step{grid-template-columns:48px 1fr;gap:16px}
   .wiki-head{padding:64px 0 40px}
   .wiki-layout{gap:56px}

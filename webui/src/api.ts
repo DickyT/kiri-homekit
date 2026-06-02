@@ -68,7 +68,7 @@ export const api = {
       }
     ),
   otaInfo: () =>
-    jsonFetch<{ ok: boolean; project_name?: string; next_partition?: { size?: number }; partitions?: Record<string, { address: number; size: number }>; error?: string }>(
+    jsonFetch<{ ok: boolean; project_name?: string; target?: string; board?: { id?: string; name?: string }; next_partition?: { size?: number }; partitions?: Record<string, { address: number; size: number }>; error?: string }>(
       "/api/ota/info"
     ),
   otaApply: () => fetch("/api/ota/apply", { method: "POST" }).catch(() => undefined),

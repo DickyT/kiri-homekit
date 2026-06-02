@@ -14,10 +14,17 @@ Icon?
 
 # ESP-IDF build artifacts
 build/
+build-*/
 managed_components/
+dependencies.lock.*
 sdkconfig
+sdkconfig.atom-lite
+sdkconfig.atoms3-lite
 sdkconfig.old
 debug_apps/*/dependencies.lock
+debug_apps/*/build-*/
+debug_apps/*/sdkconfig.atom-lite
+debug_apps/*/sdkconfig.atoms3-lite
 .idf/
 eim_config.toml
 serial_logs/

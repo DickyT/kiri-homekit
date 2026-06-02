@@ -61,6 +61,21 @@ APP_PROJECT_NAMES = {
     "cn105-probe": "kiri_installer",
 }
 
+BOARD_PROFILES = {
+    "atom-lite": {
+        "id": "atom-lite",
+        "name": "M5Stack ATOM Lite",
+        "target": "esp32",
+        "build_suffix": "",
+    },
+    "atoms3-lite": {
+        "id": "atoms3-lite",
+        "name": "M5Stack AtomS3 Lite",
+        "target": "esp32s3",
+        "build_suffix": "atoms3-lite",
+    },
+}
+
 TOOL_PATHS = [
     IDF_TOOLS_PATH / "cmake" / "3.30.2" / "CMake.app" / "Contents" / "bin",
     IDF_TOOLS_PATH / "esp-clang" / "esp-18.1.2_20240912" / "esp-clang" / "bin",
@@ -174,6 +189,14 @@ def project_name_for(app: str) -> str:
     return name
 
 
+def board_profile_for(board: str) -> dict[str, str]:
+    profile = BOARD_PROFILES.get(board)
+    if not profile:
+        known = ", ".join([*sorted(BOARD_PROFILES.keys()), "all"])
+        fail(f"Unknown board '{board}'. Known boards: {known}")
+    return profile
+
+
 def build_version_file(project_root: Path) -> Path:
     return project_root / "build_version.cmake"
 
@@ -214,7 +237,9 @@ def run_idf(
     project_root: Path = REPO_ROOT,
     forced_version: str | None = None,
     project_name_override: str | None = None,
+    board: str = "atom-lite",
 ) -> int:
+    profile = board_profile_for(board)
     if command_needs_build(args):
         if forced_version is not None:
             write_project_version(project_root, forced_version)
@@ -222,6 +247,13 @@ def run_idf(
             generate_project_version(project_root)
 
     idf_args = list(args)
+    idf_args = [
+        "-B",
+        str(build_dir_for(project_root, board)),
+        f"-DSDKCONFIG={project_root / f'sdkconfig.{board}'}",
+        f"-DIDF_TARGET={profile['target']}",
+        *idf_args,
+    ]
     if project_root == REPO_ROOT:
         idf_args = [f"-DKIRI_PROJECT_NAME={project_name_override or APP_PROJECT_NAMES['main']}", *idf_args]
 
@@ -336,11 +368,13 @@ def create_kiri_package(
     build_dir: Path,
     project_root: Path,
     app: str,
+    board: str,
     project_name: str,
     version: str,
     desc: dict,
     flash_info: dict,
 ) -> Path:
+    board_profile = board_profile_for(board)
     partitions = load_partitions(project_root)
     flash_settings = flash_info.get("flash_settings", {})
     flash_files = flash_info.get("flash_files", {})
@@ -382,10 +416,14 @@ def create_kiri_package(
         "format": KIRI_PACKAGE_FORMAT,
         "project": KIRI_PROJECT_ID,
         "product": KIRI_PRODUCT_NAME,
+        "displayName": f"{KIRI_PRODUCT_NAME} {'Production App' if app == 'main' else 'Installer'} for {board_profile['name']} ({board_profile['target']})",
         "website": KIRI_WEBSITE,
         "source": KIRI_SOURCE,
         "variant": "app" if app == "main" else "installer",
         "build_app": app,
+        "board": board_profile["id"],
+        "boardName": board_profile["name"],
+        "boardTarget": f"{board_profile['name']} ({board_profile['target']})",
         "project_name": project_name,
         "version": version,
         "target": desc.get("target", "esp32"),
@@ -405,7 +443,7 @@ def create_kiri_package(
         "partitions": partitions,
     }
 
-    package_path = version_dir / f"{project_name}_{version}.kiri"
+    package_path = version_dir / f"{project_name}_{board}_{version}.kiri"
     with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_STORED) as package:
         package.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
         for package_name, source in package_sources.items():
@@ -413,14 +451,19 @@ def create_kiri_package(
     return package_path
 
 
-def build_dir_for(project_root: Path) -> Path:
+def build_dir_for(project_root: Path, board: str = "atom-lite") -> Path:
+    profile = board_profile_for(board)
+    suffix = profile.get("build_suffix", "")
+    if suffix:
+        return project_root / f"build-{suffix}"
     return project_root / "build"
 
 
-def export_artifacts(project_root: Path, app: str) -> Path:
-    build_dir = build_dir_for(project_root)
+def export_artifacts(project_root: Path, app: str, board: str = "atom-lite") -> Path:
+    build_dir = build_dir_for(project_root, board)
     desc = load_json(build_dir / "project_description.json")
     flash_info = load_json(build_dir / "flasher_args.json")
+    board_profile = board_profile_for(board)
 
     project_name = desc.get("project_name") or project_name_for(app)
     version = desc.get("project_version") or datetime.now().strftime("%Y.%m%d.%H%M%S")
@@ -432,7 +475,7 @@ def export_artifacts(project_root: Path, app: str) -> Path:
         source = build_dir / relative_path
         if not source.exists():
             fail(f"Build output is missing: {source}")
-        destination_name = f"{project_name}_{version}_{offset}.bin"
+        destination_name = f"{project_name}_{board}_{version}_{offset}.bin"
         destination = version_dir / destination_name
         shutil.copy2(source, destination)
         exported_files.append(
@@ -448,6 +491,7 @@ def export_artifacts(project_root: Path, app: str) -> Path:
         build_dir=build_dir,
         project_root=project_root,
         app=app,
+        board=board,
         project_name=project_name,
         version=version,
         desc=desc,
@@ -457,6 +501,11 @@ def export_artifacts(project_root: Path, app: str) -> Path:
     manifest = {
         "app": app,
         "project_name": project_name,
+        "board": board_profile["id"],
+        "board_name": board_profile["name"],
+        "board_target": f"{board_profile['name']} ({board_profile['target']})",
+        "target": board_profile["target"],
+        "display_name": f"{KIRI_PRODUCT_NAME} {'Production App' if app == 'main' else 'Installer'} for {board_profile['name']} ({board_profile['target']})",
         "version": version,
         "project_root": str(project_root),
         "build_dir": str(build_dir),
@@ -465,7 +514,7 @@ def export_artifacts(project_root: Path, app: str) -> Path:
         "files": exported_files,
         "kiri_package": kiri_package_path.name,
     }
-    manifest_path = version_dir / f"{project_name}_{version}_manifest.json"
+    manifest_path = version_dir / f"{project_name}_{board}_{version}_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Exported firmware package: {manifest_path}", flush=True)
     print(f"Exported Kiri package: {kiri_package_path}", flush=True)
@@ -476,6 +525,7 @@ def build_and_export(
     project_root: Path,
     app: str,
     quiet_first: bool,
+    board: str = "atom-lite",
     forced_version: str | None = None,
     project_name_override: str | None = None,
 ) -> Path | None:
@@ -485,31 +535,41 @@ def build_and_export(
         project_root=project_root,
         forced_version=forced_version,
         project_name_override=project_name_override,
+        board=board,
     )
     if rc != 0:
         return None
-    return export_artifacts(project_root, app)
+    return export_artifacts(project_root, app, board=board)
 
 
-def build_all(quiet_first: bool) -> int:
+def build_all(quiet_first: bool, board: str) -> int:
     shared_version = version_string()
     manifests: list[Path] = []
-    for app in ("main", "installer"):
-        project_root = project_root_for(app)
-        manifest_path = build_and_export(project_root, app, quiet_first=quiet_first, forced_version=shared_version)
-        if manifest_path is None:
-            return 1
-        manifests.append(manifest_path)
+    boards = list(BOARD_PROFILES.keys()) if board == "all" else [board]
+    for board_name in boards:
+        board_profile_for(board_name)
+        for app in ("main", "installer"):
+            project_root = project_root_for(app)
+            manifest_path = build_and_export(
+                project_root,
+                app,
+                quiet_first=quiet_first,
+                board=board_name,
+                forced_version=shared_version,
+            )
+            if manifest_path is None:
+                return 1
+            manifests.append(manifest_path)
 
-    print(f"Build-all complete for version {shared_version}:", flush=True)
+    print(f"Build-all complete for version {shared_version} ({board}):", flush=True)
     for manifest in manifests:
         print(f"  {manifest}", flush=True)
     return 0
 
 
-def latest_export_manifest(app: str) -> Path:
+def latest_export_manifest(app: str, board: str = "atom-lite") -> Path:
     project_name = project_name_for(app)
-    candidates = sorted(FIRMWARE_EXPORTS_DIR.glob(f"*/{project_name}_*_manifest.json"))
+    candidates = sorted(FIRMWARE_EXPORTS_DIR.glob(f"*/{project_name}_{board}_*_manifest.json"))
     if not candidates:
         fail(
             f"No exported firmware package found for app '{app}'. "
@@ -525,19 +585,19 @@ def load_manifest(path: Path) -> dict:
     return manifest
 
 
-def latest_or_current_manifest(project_root: Path, app: str) -> dict:
+def latest_or_current_manifest(project_root: Path, app: str, board: str = "atom-lite") -> dict:
     try:
-        return load_manifest(latest_export_manifest(app))
+        return load_manifest(latest_export_manifest(app, board=board))
     except SystemExit:
         pass
 
-    build_dir = build_dir_for(project_root)
+    build_dir = build_dir_for(project_root, board)
     if not (build_dir / "flasher_args.json").exists():
         fail(
             f"No exported package and no local build found for app '{app}'. "
             f"Run './build.py --app {app} build' first."
         )
-    manifest_path = export_artifacts(project_root, app)
+    manifest_path = export_artifacts(project_root, app, board=board)
     return load_manifest(manifest_path)
 
 
@@ -588,12 +648,13 @@ def flash(args: argparse.Namespace) -> int:
     port = detect_port_or_fail(args.port)
     manifest: dict
     if args.no_build:
-        manifest = load_manifest(latest_export_manifest(args.app))
+        manifest = load_manifest(latest_export_manifest(args.app, board=args.board))
     else:
         manifest_path = build_and_export(
             args.project_root,
             args.app,
             args.quiet_first,
+            board=args.board,
             project_name_override=getattr(args, "project_name_override", None),
         )
         if manifest_path is None:
@@ -608,7 +669,7 @@ def flash(args: argparse.Namespace) -> int:
 
 def flash_esptool(args: argparse.Namespace) -> int:
     port = detect_port_or_fail(args.port)
-    manifest = latest_or_current_manifest(args.project_root, args.app)
+    manifest = latest_or_current_manifest(args.project_root, args.app, board=args.board)
     return flash_manifest(manifest, port, args.baud)
 
 
@@ -650,6 +711,7 @@ def main() -> int:
     argv = sys.argv[1:]
 
     app = "main"
+    board = "atom-lite"
     project_name_override: str | None = None
     normalized_argv: list[str] = []
     skip = False
@@ -669,8 +731,16 @@ def main() -> int:
             project_name_override = argv[index + 1]
             skip = True
             continue
+        if arg == "--board":
+            if index + 1 >= len(argv):
+                fail("Missing value after --board")
+            board = argv[index + 1]
+            skip = True
+            continue
         normalized_argv.append(arg)
     argv = normalized_argv
+    if board != "all":
+        board_profile_for(board)
     project_root = project_root_for(app)
 
     if not (len(argv) > 0 and argv[0] in ("flash-esptool", "serial-log")):
@@ -691,6 +761,7 @@ def main() -> int:
         parsed = parser.parse_args(argv[1:])
         parsed.project_root = project_root
         parsed.app = app
+        parsed.board = board
         return flash_esptool(parsed)
 
     if len(argv) > 0 and argv[0] == "flash-auto":
@@ -704,6 +775,7 @@ def main() -> int:
         parsed.quiet_first = parsed.quiet_first or quiet_first
         parsed.project_root = project_root
         parsed.app = app
+        parsed.board = board
         parsed.project_name_override = project_name_override
         return flash(parsed)
 
@@ -717,12 +789,14 @@ def main() -> int:
         return serial_log(parser.parse_args(argv[1:]))
 
     if len(argv) > 0 and argv[0] in ("buildall", "build-all"):
-        return build_all(quiet_first=quiet_first)
+        return build_all(quiet_first=quiet_first, board=board)
 
     args = argv or ["build"]
-    rc = run_idf(args, quiet_first=quiet_first, project_root=project_root, project_name_override=project_name_override)
+    if board == "all":
+        fail("--board all is only supported with buildall")
+    rc = run_idf(args, quiet_first=quiet_first, project_root=project_root, project_name_override=project_name_override, board=board)
     if rc == 0 and command_needs_build(args):
-        export_artifacts(project_root, app)
+        export_artifacts(project_root, app, board=board)
     return rc
 
 

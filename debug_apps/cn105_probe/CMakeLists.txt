@@ -46,8 +46,10 @@ endif()
 message(STATUS "Installer bundle:\n${WEBUI_INSTALLER_STDOUT}")
 
 set(EXTRA_COMPONENT_DIRS
+    ${CMAKE_CURRENT_LIST_DIR}/../../components/board_profile
     ${CMAKE_CURRENT_LIST_DIR}/../../managed_components/espressif__led_strip
     ${CMAKE_CURRENT_LIST_DIR}/../../components/ota_handler)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.${IDF_TARGET})
 project(kiri_installer)

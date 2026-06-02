@@ -12,6 +12,7 @@
 #include "device_settings.h"
 
 #include "app_config.h"
+#include "board_profile.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs.h"
@@ -33,9 +34,9 @@ constexpr char kDefaultHomeKitModel[] = "Kiri Bridge";
 constexpr char kDefaultHomeKitSerial[] = "KIRI-BRIDGE";
 constexpr char kDefaultHomeKitSetupId[] = "DKT1";
 constexpr bool kDefaultUseRealCn105 = true;
-constexpr int kDefaultStatusLedPin = 27;
-constexpr int kDefaultCn105RxPin = 26;
-constexpr int kDefaultCn105TxPin = 32;
+constexpr int kDefaultStatusLedPin = board_profile::kDefaultStatusLedPin;
+constexpr int kDefaultCn105RxPin = board_profile::kDefaultCn105RxPin;
+constexpr int kDefaultCn105TxPin = board_profile::kDefaultCn105TxPin;
 constexpr int kDefaultCn105BaudRate = 2400;
 constexpr int kDefaultCn105DataBits = 8;
 constexpr char kDefaultCn105Parity = 'E';
@@ -111,11 +112,11 @@ bool validBaud(int value) {
 }
 
 bool validGpio(int value) {
-    return value >= 0 && value <= 39;
+    return board_profile::validGpio(value);
 }
 
 bool validOutputGpio(int value) {
-    return validGpio(value) && value < 34;
+    return board_profile::validOutputGpio(value);
 }
 
 bool validDataBits(int value) {

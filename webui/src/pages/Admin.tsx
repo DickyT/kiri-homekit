@@ -7,7 +7,7 @@ import { Section, Field, Btn, Modal, OtaConfirmModal, RebootingModal } from "../
 import { HomeKitPairingTile } from "../HomeKitPairingTile";
 import { api } from "../api";
 import { status, fetchStatusOnce } from "../store";
-import type { Status, DeviceConfig, TransportStatus } from "../types";
+import type { Status, DeviceConfig, TransportStatus, BoardInfo } from "../types";
 import { validateAndUpload } from "../lib/ota";
 import type { OtaUploadResult } from "../lib/ota";
 
@@ -96,7 +96,8 @@ function defaultSettings(): SettingsForm {
     "cfg-cn105-tx-open-drain": "0",
   };
 }
-function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: string): SettingsForm {
+function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: string, board?: BoardInfo): SettingsForm {
+  const defaults = board?.defaults ?? {};
   return {
     "cfg-device-name": cfg?.device_name ?? deviceFallback,
     "cfg-wifi-ssid": cfg?.wifi_ssid ?? "",
@@ -106,13 +107,13 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
     "cfg-homekit-manufacturer": cfg?.homekit_manufacturer ?? "",
     "cfg-homekit-model": cfg?.homekit_model ?? "",
     "cfg-homekit-serial": cfg?.homekit_serial ?? "",
-    "cfg-led-pin": String(cfg?.led_pin ?? 27),
+    "cfg-led-pin": String(cfg?.led_pin ?? defaults.led_pin ?? 27),
     "cfg-cn105-mode": cfg?.cn105_mode ?? "real",
     "cfg-log-level": cfg?.log_level ?? "info",
     "cfg-poll-active": String(cfg?.poll_active_ms ?? 15000),
     "cfg-poll-off": String(cfg?.poll_off_ms ?? 60000),
-    "cfg-cn105-rx-pin": String(cfg?.cn105_rx_pin ?? 26),
-    "cfg-cn105-tx-pin": String(cfg?.cn105_tx_pin ?? 32),
+    "cfg-cn105-rx-pin": String(cfg?.cn105_rx_pin ?? defaults.cn105_rx_pin ?? 26),
+    "cfg-cn105-tx-pin": String(cfg?.cn105_tx_pin ?? defaults.cn105_tx_pin ?? 32),
     "cfg-cn105-baud": String(cfg?.cn105_baud ?? 2400),
     "cfg-cn105-data-bits": String(cfg?.cn105_data_bits ?? 8),
     "cfg-cn105-parity": cfg?.cn105_parity ?? "E",
@@ -177,7 +178,7 @@ export function AdminPage(): JSX.Element {
   // Bootstrap settings from first status that arrives.
   useEffect(() => {
     if (settingsLoaded || !s) return;
-    setSettings(settingsFromConfig(s.config, s.device));
+    setSettings(settingsFromConfig(s.config, s.device, s.board));
     setTransport(s.cn105.transport_status);
     setSettingsLoaded(true);
   }, [s]);
@@ -432,9 +433,9 @@ export function AdminPage(): JSX.Element {
       </Section>
 
       <Section title="BLE Provisioning">
-        <div class="subtitle">Hold the M5Stack ATOM Lite button (GPIO39) for 3 seconds to open BLE provisioning for 5 minutes.</div>
+        <div class="subtitle">Hold the {s.board?.name ?? "Kiri Bridge"} button (GPIO{s.provisioning.button_gpio ?? s.board?.defaults?.provisioning_button_gpio ?? 39}) for 3 seconds to open BLE provisioning for 5 minutes.</div>
         <div class="spec-row"><span class="key">State</span><span class="val">{provisioningStage(s.provisioning)}</span></div>
-        <div class="spec-row"><span class="key">Service</span><span class="val">{s.provisioning.service_name ?? `GPIO${s.provisioning.button_gpio ?? 39}`}</span></div>
+        <div class="spec-row"><span class="key">Service</span><span class="val">{s.provisioning.service_name ?? `GPIO${s.provisioning.button_gpio ?? s.board?.defaults?.provisioning_button_gpio ?? 39}`}</span></div>
         <div class="spec-row"><span class="key">Time Left</span><span class="val">{s.provisioning.active ? formatDuration(s.provisioning.remaining_ms ?? 0) : "--"}</span></div>
         <div class="spec-row"><span class="key">Last Result</span><span class="val">{s.provisioning.last_result ?? "--"}</span></div>
         <div class="spec-row"><span class="key">Pending WiFi</span><span class="val">{s.provisioning.pending_ssid ?? "--"}</span></div>
@@ -451,7 +452,7 @@ export function AdminPage(): JSX.Element {
           <Field label="HomeKit Manufacturer"><input type="text" maxLength={63} value={settings["cfg-homekit-manufacturer"]} onInput={(e) => update("cfg-homekit-manufacturer", (e.target as HTMLInputElement).value)} placeholder="dkt smart home" /></Field>
           <Field label="HomeKit Model"><input type="text" maxLength={63} value={settings["cfg-homekit-model"]} onInput={(e) => update("cfg-homekit-model", (e.target as HTMLInputElement).value)} placeholder="Kiri Bridge" /></Field>
           <Field label="HomeKit Serial"><input type="text" maxLength={63} value={settings["cfg-homekit-serial"]} onInput={(e) => update("cfg-homekit-serial", (e.target as HTMLInputElement).value)} placeholder="KIRI-BRIDGE" /></Field>
-          <Field label="Status LED GPIO"><input type="number" min={0} max={33} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
+          <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
           <Field label="Log Level">
             <select value={settings["cfg-log-level"]} onChange={(e) => update("cfg-log-level", (e.target as HTMLSelectElement).value)}>
               <option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option><option value="verbose">verbose</option>
@@ -523,8 +524,8 @@ export function AdminPage(): JSX.Element {
       >
         <div class="danger-banner"><strong>Dangerous</strong>If CN105 works now, don't change these unless you're debugging hardware.</div>
         <div class="grid2">
-          <Field label="RX GPIO"><input type="number" min={0} max={39} step={1} value={settings["cfg-cn105-rx-pin"]} onInput={(e) => update("cfg-cn105-rx-pin", (e.target as HTMLInputElement).value)} /></Field>
-          <Field label="TX GPIO"><input type="number" min={0} max={33} step={1} value={settings["cfg-cn105-tx-pin"]} onInput={(e) => update("cfg-cn105-tx-pin", (e.target as HTMLInputElement).value)} /></Field>
+          <Field label="RX GPIO"><input type="number" min={0} step={1} value={settings["cfg-cn105-rx-pin"]} onInput={(e) => update("cfg-cn105-rx-pin", (e.target as HTMLInputElement).value)} /></Field>
+          <Field label="TX GPIO"><input type="number" min={0} step={1} value={settings["cfg-cn105-tx-pin"]} onInput={(e) => update("cfg-cn105-tx-pin", (e.target as HTMLInputElement).value)} /></Field>
           <Field label="Baud Rate">
             <select value={settings["cfg-cn105-baud"]} onChange={(e) => update("cfg-cn105-baud", (e.target as HTMLSelectElement).value)}>
               <option value="2400">2400</option><option value="4800">4800</option><option value="9600">9600</option>

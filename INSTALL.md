@@ -13,7 +13,7 @@ computer with Bluetooth, WiFi, and a browser.
 - Apple Home app for HomeKit pairing
 - Chrome or another Web Bluetooth capable browser for browser provisioning
 
-The Kiri Bridge kit includes the M5Stack ATOM Lite controller and two CN105
+The Kiri Bridge kit includes an M5Stack ATOM Lite or AtomS3 Lite controller and two CN105
 cable options.
 
 ## Normal Setup

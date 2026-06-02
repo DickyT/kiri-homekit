@@ -17,7 +17,6 @@
     </a>
     <div class="nav-links">
       <a href="index.html">home</a>
-      <a href="ble_provisioning.html">setup</a>
       <a href="wiki.html">wiki</a>
       <a href="https://github.com/DickyT/kiri-homekit">github</a>
     </div>
@@ -264,9 +263,15 @@ function extractChipName(esploader){
   return 'ESP32';
 }
 
-function isAllowedClassicEsp32(chipName){
+function targetForChipName(chipName){
   const normalized=String(chipName||'').toUpperCase();
-  return normalized==='ESP32'||normalized.includes('ESP32-PICO-D4');
+  if(normalized.includes('ESP32-S3'))return 'esp32s3';
+  if(normalized==='ESP32'||normalized.includes('ESP32-PICO-D4'))return 'esp32';
+  return '';
+}
+
+function isAllowedKiriChip(chipName){
+  return !!targetForChipName(chipName);
 }
 
 async function readMac(esploader){
@@ -290,6 +295,7 @@ function renderDeviceDetails(info){
       <tbody>
         <tr><th>USB VID/PID</th><td>${info.usbVendorId||'--'} / ${info.usbProductId||'--'}</td></tr>
         <tr><th>Chip</th><td>${info.chipName}</td></tr>
+        <tr><th>Target</th><td>${info.target||'--'}</td></tr>
         <tr><th>MAC</th><td>${info.mac||'--'}</td></tr>
         <tr><th>Baud</th><td>${flashBaudRate}</td></tr>
       </tbody>
@@ -313,8 +319,9 @@ function renderFlashSummary(){
     <table class="data-table">
       <tbody>
         <tr><th>Device chip</th><td>${selectedDeviceInfo.chipName}</td></tr>
+        <tr><th>Device target</th><td>${selectedDeviceInfo.target||'--'}</td></tr>
         <tr><th>Device MAC</th><td>${selectedDeviceInfo.mac||'--'}</td></tr>
-        <tr><th>Selected package</th><td>${manifest.product||'Kiri Bridge'} ${manifest.version||'--'} (${manifest.variant||'--'})</td></tr>
+        <tr><th>Selected package</th><td>${manifest.displayName||`${manifest.product||'Kiri Bridge'} ${manifest.version||'--'} (${manifest.variant||'--'} · ${manifest.board||manifest.target||'--'})`}</td></tr>
         <tr><th>Images to write</th><td>${selectedPackage.parts.length}</td></tr>
       </tbody>
     </table>
@@ -343,8 +350,9 @@ async function verifyDevice(port,usbInfo){
       ? await esploader.chip.getChipDescription(esploader)
       : extractChipName(esploader);
     mac=normalizeMac(await readMac(esploader));
-    if(!isAllowedClassicEsp32(chipName)){
-      throw new Error(`Unexpected chip: ${chipName || 'unknown'}. Expected ESP32 / ESP32-PICO-D4.`);
+    const target=targetForChipName(chipName);
+    if(!isAllowedKiriChip(chipName)){
+      throw new Error(`Unexpected chip: ${chipName || 'unknown'}. Expected ESP32 / ESP32-PICO-D4 / ESP32-S3.`);
     }
   }finally{
     if(typeof esploader.after==='function'){
@@ -356,6 +364,7 @@ async function verifyDevice(port,usbInfo){
   }
   return {
     chipName,
+    target,
     mac,
     usbVendorId:usbInfo.usbVendorId?`0x${usbInfo.usbVendorId.toString(16).padStart(4,'0')}`:'',
     usbProductId:usbInfo.usbProductId?`0x${usbInfo.usbProductId.toString(16).padStart(4,'0')}`:''
@@ -412,7 +421,10 @@ async function selectSerialPort(){
   let port=null;
   try{
     await closeReservedPort();
-    port=await navigator.serial.requestPort({filters:[{usbVendorId:0x0403,usbProductId:0x6001}]});
+    port=await navigator.serial.requestPort({filters:[
+      {usbVendorId:0x0403,usbProductId:0x6001},
+      {usbVendorId:0x303a,usbProductId:0x1001}
+    ]});
     const usbInfo=port.getInfo?port.getInfo():{};
     $('serial-btn').disabled=true;
     $('continue-package-btn').classList.add('step-hidden');
@@ -427,7 +439,7 @@ async function selectSerialPort(){
     $('chip-state').className='ok';
     $('chip-state').textContent=`${deviceInfo.chipName}${deviceInfo.mac ? ' · '+deviceInfo.mac : ''}`;
     renderDeviceDetails(deviceInfo);
-    log(`Verified ${deviceInfo.chipName}${deviceInfo.mac?' MAC '+deviceInfo.mac:''}. USB connection reserved at ${flashBaudRate} baud.`);
+    log(`Verified ${deviceInfo.chipName} (${deviceInfo.target})${deviceInfo.mac?' MAC '+deviceInfo.mac:''}. USB connection reserved at ${flashBaudRate} baud.`);
     $('serial-btn').textContent='Verified';
     $('serial-btn').disabled=true;
     $('continue-package-btn').classList.remove('step-hidden');
@@ -536,7 +548,7 @@ function renderPackageDetails(pkg){
         <tr><th>Product</th><td>${manifest.product||'Kiri Bridge'}</td></tr>
         <tr><th>Version</th><td>${manifest.version||'--'}</td></tr>
         <tr><th>Firmware role</th><td class="${variantClass}">${manifest.variant||'--'} · ${variantText}</td></tr>
-        <tr><th>Hardware target</th><td>${manifest.target||'esp32'} · flash ${manifest.flashSize||'keep'}</td></tr>
+        <tr><th>Hardware target</th><td>${manifest.boardTarget||`${manifest.board||'unknown board'} (${manifest.target||'esp32'})`} · flash ${manifest.flashSize||'keep'}</td></tr>
       </tbody>
     </table>
     <table class="data-table">
@@ -559,6 +571,9 @@ async function handlePackageSelection(){
   try{
     setPackageState('checking '+file.name,'warn');
     selectedPackage=await parseKiriPackage(file);
+    if(selectedDeviceInfo&&selectedPackage.manifest.target&&selectedPackage.manifest.target!==selectedDeviceInfo.target){
+      throw new Error(`Package target ${selectedPackage.manifest.target} does not match verified device target ${selectedDeviceInfo.target}. Choose the correct Kiri package for this hardware.`);
+    }
     renderPackageDetails(selectedPackage);
     setPackageState(`${file.name} ready`,'ok');
     $('choose-package-btn').textContent='Choose another firmware';
