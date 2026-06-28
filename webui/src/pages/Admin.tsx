@@ -563,37 +563,39 @@ export function AdminPage(): JSX.Element {
         <pre>{renderTransport(transport)}</pre>
       </Section>
 
-      <Section title="Automation" action={<Btn compact disabled={automationBusy} onClick={refreshAutomation}>Refresh</Btn>}>
-        <div class="subtitle">Tiny Lua hooks that run on real state changes. Save, enable, then test by changing the AC from HomeKit, WebUI, the Mitsubishi remote, or the indoor unit.</div>
-        <div class="spec-row"><span class="key">State</span><span class="val">{automation?.enabled ? "Enabled" : "Disabled"}</span></div>
-        <div class="spec-row"><span class="key">Script</span><span class="val">{automation?.script_exists ? `${automation.script_size} / ${automation.script_max_bytes} bytes` : "Not saved"}</span></div>
-        <div class="spec-row"><span class="key">Last Hook</span><span class="val">{automation?.last_set ? (automation.last_hook || "--") : "None yet"}</span></div>
-        <div class="spec-row"><span class="key">Last Result</span><span class={"val " + (automation?.last_set ? (automation.last_ok ? "on" : "text-bad") : "off")}>{automation?.last_set ? (automation.last_ok ? "OK" : "Error") : "--"}</span></div>
-        <textarea
-          spellcheck={false}
-          autocomplete="off"
-          autocapitalize="off"
-          value={automationScript}
-          style={{ minHeight: "300px", marginTop: "14px" }}
-          onInput={(e) => {
-            setAutomationScript((e.target as HTMLTextAreaElement).value);
-            setAutomationDirty(true);
-          }}
-        />
-        <div class="btns">
-          <Btn variant="primary" disabled={automationBusy || !automationDirty} onClick={saveAutomation}>{automationDirty ? "Save Script *" : "Save Script"}</Btn>
-          <Btn disabled={automationBusy || automationDirty || !automation?.script_exists} onClick={() => toggleAutomation(!automation?.enabled)}>{automation?.enabled ? "Disable" : "Enable"}</Btn>
-          <Btn disabled={automationBusy} onClick={() => {
-            setAutomationScript(DEFAULT_AUTOMATION_SCRIPT);
-            setAutomationDirty(true);
-            setAutomationMsg("Template restored locally. Click Save Script to write it.");
-          }}>Template</Btn>
-          <Btn variant="danger" disabled={automationBusy || !automation?.script_exists} onClick={deleteAutomation}>Delete</Btn>
-        </div>
-        {automationMsg && <div style={{ marginTop: "10px", fontSize: "13px", color: automationMsg.includes("failed") || automationMsg.includes("Failed") ? "var(--bad)" : "var(--accent)" }}>{automationMsg}</div>}
-        <div class="subtitle" style={{ marginTop: "14px" }}>Runtime Log</div>
-        <pre>{renderAutomationLog(automation)}</pre>
-      </Section>
+      <div style={{ display: "none" }}>
+        <Section title="Automation" action={<Btn compact disabled={automationBusy} onClick={refreshAutomation}>Refresh</Btn>}>
+          <div class="subtitle">Tiny Lua hooks that run on real state changes. Save, enable, then test by changing the AC from HomeKit, WebUI, the Mitsubishi remote, or the indoor unit.</div>
+          <div class="spec-row"><span class="key">State</span><span class="val">{automation?.enabled ? "Enabled" : "Disabled"}</span></div>
+          <div class="spec-row"><span class="key">Script</span><span class="val">{automation?.script_exists ? `${automation.script_size} / ${automation.script_max_bytes} bytes` : "Not saved"}</span></div>
+          <div class="spec-row"><span class="key">Last Hook</span><span class="val">{automation?.last_set ? (automation.last_hook || "--") : "None yet"}</span></div>
+          <div class="spec-row"><span class="key">Last Result</span><span class={"val " + (automation?.last_set ? (automation.last_ok ? "on" : "text-bad") : "off")}>{automation?.last_set ? (automation.last_ok ? "OK" : "Error") : "--"}</span></div>
+          <textarea
+            spellcheck={false}
+            autocomplete="off"
+            autocapitalize="off"
+            value={automationScript}
+            style={{ minHeight: "300px", marginTop: "14px" }}
+            onInput={(e) => {
+              setAutomationScript((e.target as HTMLTextAreaElement).value);
+              setAutomationDirty(true);
+            }}
+          />
+          <div class="btns">
+            <Btn variant="primary" disabled={automationBusy || !automationDirty} onClick={saveAutomation}>{automationDirty ? "Save Script *" : "Save Script"}</Btn>
+            <Btn disabled={automationBusy || automationDirty || !automation?.script_exists} onClick={() => toggleAutomation(!automation?.enabled)}>{automation?.enabled ? "Disable" : "Enable"}</Btn>
+            <Btn disabled={automationBusy} onClick={() => {
+              setAutomationScript(DEFAULT_AUTOMATION_SCRIPT);
+              setAutomationDirty(true);
+              setAutomationMsg("Template restored locally. Click Save Script to write it.");
+            }}>Template</Btn>
+            <Btn variant="danger" disabled={automationBusy || !automation?.script_exists} onClick={deleteAutomation}>Delete</Btn>
+          </div>
+          {automationMsg && <div style={{ marginTop: "10px", fontSize: "13px", color: automationMsg.includes("failed") || automationMsg.includes("Failed") ? "var(--bad)" : "var(--accent)" }}>{automationMsg}</div>}
+          <div class="subtitle" style={{ marginTop: "14px" }}>Runtime Log</div>
+          <pre>{renderAutomationLog(automation)}</pre>
+        </Section>
+      </div>
 
       <Section title="BLE Provisioning">
         <div class="subtitle">Hold the {s.board?.name ?? "Kiri Bridge"} button (GPIO{s.provisioning.button_gpio ?? s.board?.defaults?.provisioning_button_gpio ?? 39}) for 3 seconds to open BLE provisioning for 5 minutes.</div>
