@@ -1,6 +1,6 @@
 // Kiri Bridge — fetch wrappers. Single place to swap headers/error handling.
 
-import type { Status, LogList } from "./types";
+import type { Status, LogList, AutomationStatus } from "./types";
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -33,6 +33,25 @@ export const api = {
       "/api/files/delete?path=" + encodeURIComponent(path),
       { method: "POST" }
     ),
+  automationStatus: () => jsonFetch<AutomationStatus>("/api/automation/status"),
+  automationScript: () => fetch("/api/automation/script").then((r) => {
+    if (!r.ok) throw new Error("HTTP " + r.status + " /api/automation/script");
+    return r.text();
+  }),
+  saveAutomationScript: (body: string) =>
+    jsonFetch<AutomationStatus>("/api/automation/script", {
+      method: "PUT",
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      body,
+    }),
+  deleteAutomationScript: () =>
+    jsonFetch<AutomationStatus>("/api/automation/script", { method: "DELETE" }),
+  setAutomationEnabled: (enabled: boolean) =>
+    jsonFetch<AutomationStatus>("/api/automation/enabled", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "enabled=" + (enabled ? "1" : "0"),
+    }),
   clearLogs: () =>
     jsonFetch<{ ok: boolean; message?: string; error?: string; rebooting?: boolean }>(
       "/api/maintenance/clear-logs",

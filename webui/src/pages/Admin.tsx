@@ -7,7 +7,7 @@ import { Section, Field, Btn, Modal, OtaConfirmModal, RebootingModal } from "../
 import { HomeKitPairingTile } from "../HomeKitPairingTile";
 import { api } from "../api";
 import { status, fetchStatusOnce } from "../store";
-import type { Status, DeviceConfig, TransportStatus, BoardInfo } from "../types";
+import type { Status, DeviceConfig, TransportStatus, BoardInfo, AutomationStatus } from "../types";
 import { validateAndUpload } from "../lib/ota";
 import type { OtaUploadResult } from "../lib/ota";
 
@@ -71,6 +71,31 @@ const CN105_ADVANCED_KEYS = [
 ] as const;
 
 type SettingsForm = Record<string, string>;
+
+const DEFAULT_AUTOMATION_SCRIPT = `-- Kiri Bridge automation.lua
+-- Save, enable Automation, then test with the real AC/HomeKit/WebUI.
+
+function on_power_off(state, previous)
+  if previous and previous.up_down_airflow then
+    kv.set("last_up_down_airflow", previous.up_down_airflow)
+  end
+end
+
+function on_power_on(state, previous)
+  local airflow = kv.get("last_up_down_airflow")
+  if airflow and airflow ~= "" then
+    ac.set_up_down_airflow(airflow)
+  end
+end
+
+function on_state_changed(state, previous)
+  -- Example:
+  -- if state.power and state.room_temp_f > state.target_temp_f + 3 then
+  --   ac.set_fan(3)
+  -- end
+end
+`;
+
 function defaultSettings(): SettingsForm {
   return {
     "cfg-device-name": "",
@@ -142,6 +167,38 @@ function renderTransport(t: TransportStatus | undefined): string {
   ].filter(Boolean).join("\n");
 }
 
+function renderAutomationLog(a: AutomationStatus | null): string {
+  if (!a) return "Loading automation status…";
+  const lines = [
+    `enabled: ${a.enabled ? "yes" : "no"}`,
+    `script: ${a.script_exists ? `${a.script_size}/${a.script_max_bytes} bytes` : "not saved"}`,
+    `runs: ${a.run_count}`,
+  ];
+  if (!a.last_set) {
+    lines.push("last run: none yet");
+    lines.push("tip: save + enable, then change AC state from HomeKit, WebUI, or the Mitsubishi remote.");
+    return lines.join("\n");
+  }
+  lines.push(`last hook: ${a.last_hook || "--"}`);
+  lines.push(`last result: ${a.last_ok ? "ok" : "error"}`);
+  lines.push(`message: ${a.last_message || "--"}`);
+  lines.push(`script loaded: ${a.last_script_loaded ? "yes" : "no"}`);
+  lines.push(`hook found: ${a.last_hook_found ? "yes" : "no"}`);
+  lines.push(`instruction limit: ${a.last_instruction_limit_hit ? "hit" : "ok"}`);
+  lines.push(`peak heap: ${a.last_peak_bytes} bytes`);
+  if (a.last_actions?.length) {
+    lines.push("actions:");
+    for (const action of a.last_actions) {
+      const value = action.value !== undefined && action.value !== "" ? ` value=${action.value}` : "";
+      const intValue = action.int_value !== undefined ? ` int=${action.int_value}` : "";
+      lines.push(`  - ${action.type}${value}${intValue}`);
+    }
+  } else {
+    lines.push("actions: none");
+  }
+  return lines.join("\n");
+}
+
 // ----- main page component -----
 
 type NoticeState = { title: string; body: string };
@@ -167,6 +224,12 @@ export function AdminPage(): JSX.Element {
   const [nvsBody, setNvsBody] = useState<string>("Loading…");
   const [nvsMsg, setNvsMsg] = useState<string>("");
   const [nvsBusy, setNvsBusy] = useState(false);
+  const [automation, setAutomation] = useState<AutomationStatus | null>(null);
+  const [automationScript, setAutomationScript] = useState(DEFAULT_AUTOMATION_SCRIPT);
+  const [automationLoaded, setAutomationLoaded] = useState(false);
+  const [automationDirty, setAutomationDirty] = useState(false);
+  const [automationBusy, setAutomationBusy] = useState(false);
+  const [automationMsg, setAutomationMsg] = useState("");
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [rebooting, setRebooting] = useState(false);
   const [transport, setTransport] = useState<TransportStatus | undefined>(undefined);
@@ -197,6 +260,11 @@ export function AdminPage(): JSX.Element {
   useEffect(() => {
     if (s) setTransport(s.cn105.transport_status);
   }, [s]);
+
+  useEffect(() => {
+    if (automationLoaded) return;
+    refreshAutomation();
+  }, [automationLoaded]);
 
   function update(key: string, value: string): void {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -236,6 +304,69 @@ export function AdminPage(): JSX.Element {
   async function refreshTransport(): Promise<void> {
     try { setTransport(await api.transportStatus()); }
     catch (e: any) { setTransport(undefined); }
+  }
+
+  async function refreshAutomation(): Promise<void> {
+    setAutomationMsg("Loading automation…");
+    try {
+      const [nextStatus, script] = await Promise.all([
+        api.automationStatus(),
+        api.automationScript(),
+      ]);
+      setAutomation(nextStatus);
+      setAutomationScript(script || DEFAULT_AUTOMATION_SCRIPT);
+      setAutomationDirty(false);
+      setAutomationLoaded(true);
+      setAutomationMsg(nextStatus.script_exists ? "Automation loaded." : "No script saved yet. Edit the template and save when ready.");
+    } catch (e: any) {
+      setAutomationMsg("Automation load failed: " + (e?.message ?? e));
+    }
+  }
+
+  async function saveAutomation(): Promise<void> {
+    setAutomationBusy(true);
+    setAutomationMsg("Saving automation script…");
+    try {
+      const next = await api.saveAutomationScript(automationScript);
+      setAutomation(next);
+      setAutomationDirty(false);
+      setAutomationMsg("Automation script saved. Enable it, then test with the real AC.");
+    } catch (e: any) {
+      setAutomationMsg("Save failed: " + (e?.message ?? e));
+    } finally {
+      setAutomationBusy(false);
+    }
+  }
+
+  async function toggleAutomation(enabled: boolean): Promise<void> {
+    setAutomationBusy(true);
+    setAutomationMsg(enabled ? "Enabling automation…" : "Disabling automation…");
+    try {
+      const next = await api.setAutomationEnabled(enabled);
+      setAutomation(next);
+      setAutomationMsg(enabled ? "Automation enabled. Change AC state to test it." : "Automation disabled.");
+    } catch (e: any) {
+      setAutomationMsg("Toggle failed: " + (e?.message ?? e));
+    } finally {
+      setAutomationBusy(false);
+    }
+  }
+
+  async function deleteAutomation(): Promise<void> {
+    if (!confirm("Delete automation.lua from this device?")) return;
+    setAutomationBusy(true);
+    setAutomationMsg("Deleting automation script…");
+    try {
+      const next = await api.deleteAutomationScript();
+      setAutomation(next);
+      setAutomationScript(DEFAULT_AUTOMATION_SCRIPT);
+      setAutomationDirty(false);
+      setAutomationMsg("Automation script deleted. Template restored locally only.");
+    } catch (e: any) {
+      setAutomationMsg("Delete failed: " + (e?.message ?? e));
+    } finally {
+      setAutomationBusy(false);
+    }
   }
 
   async function saveConfig(): Promise<void> {
@@ -430,6 +561,38 @@ export function AdminPage(): JSX.Element {
 
       <Section title="CN105 Link" action={<Btn compact onClick={refreshTransport}>Refresh</Btn>}>
         <pre>{renderTransport(transport)}</pre>
+      </Section>
+
+      <Section title="Automation" action={<Btn compact disabled={automationBusy} onClick={refreshAutomation}>Refresh</Btn>}>
+        <div class="subtitle">Tiny Lua hooks that run on real state changes. Save, enable, then test by changing the AC from HomeKit, WebUI, the Mitsubishi remote, or the indoor unit.</div>
+        <div class="spec-row"><span class="key">State</span><span class="val">{automation?.enabled ? "Enabled" : "Disabled"}</span></div>
+        <div class="spec-row"><span class="key">Script</span><span class="val">{automation?.script_exists ? `${automation.script_size} / ${automation.script_max_bytes} bytes` : "Not saved"}</span></div>
+        <div class="spec-row"><span class="key">Last Hook</span><span class="val">{automation?.last_set ? (automation.last_hook || "--") : "None yet"}</span></div>
+        <div class="spec-row"><span class="key">Last Result</span><span class={"val " + (automation?.last_set ? (automation.last_ok ? "on" : "text-bad") : "off")}>{automation?.last_set ? (automation.last_ok ? "OK" : "Error") : "--"}</span></div>
+        <textarea
+          spellcheck={false}
+          autocomplete="off"
+          autocapitalize="off"
+          value={automationScript}
+          style={{ minHeight: "300px", marginTop: "14px" }}
+          onInput={(e) => {
+            setAutomationScript((e.target as HTMLTextAreaElement).value);
+            setAutomationDirty(true);
+          }}
+        />
+        <div class="btns">
+          <Btn variant="primary" disabled={automationBusy || !automationDirty} onClick={saveAutomation}>{automationDirty ? "Save Script *" : "Save Script"}</Btn>
+          <Btn disabled={automationBusy || automationDirty || !automation?.script_exists} onClick={() => toggleAutomation(!automation?.enabled)}>{automation?.enabled ? "Disable" : "Enable"}</Btn>
+          <Btn disabled={automationBusy} onClick={() => {
+            setAutomationScript(DEFAULT_AUTOMATION_SCRIPT);
+            setAutomationDirty(true);
+            setAutomationMsg("Template restored locally. Click Save Script to write it.");
+          }}>Template</Btn>
+          <Btn variant="danger" disabled={automationBusy || !automation?.script_exists} onClick={deleteAutomation}>Delete</Btn>
+        </div>
+        {automationMsg && <div style={{ marginTop: "10px", fontSize: "13px", color: automationMsg.includes("failed") || automationMsg.includes("Failed") ? "var(--bad)" : "var(--accent)" }}>{automationMsg}</div>}
+        <div class="subtitle" style={{ marginTop: "14px" }}>Runtime Log</div>
+        <pre>{renderAutomationLog(automation)}</pre>
       </Section>
 
       <Section title="BLE Provisioning">

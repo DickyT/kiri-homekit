@@ -26,6 +26,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "homekit_bridge.h"
+#include "lua_vm.h"
 #include "ota_handler.h"
 #include "platform_fs.h"
 #include "platform_log.h"
@@ -82,6 +83,38 @@ bool readBody(httpd_req_t* req, char* out, size_t out_len) {
     }
     out[total] = '\0';
     return remaining == 0;
+}
+
+char* readBodyAlloc(httpd_req_t* req, size_t max_len, size_t* out_len) {
+    if (out_len != nullptr) {
+        *out_len = 0;
+    }
+    const size_t content_len = static_cast<size_t>(req->content_len);
+    if (content_len > max_len) {
+        return nullptr;
+    }
+    char* body = static_cast<char*>(std::calloc(content_len + 1, sizeof(char)));
+    if (body == nullptr) {
+        return nullptr;
+    }
+    size_t remaining = content_len;
+    size_t total = 0;
+    while (remaining > 0) {
+        const int received = httpd_req_recv(req,
+                                            body + total,
+                                            static_cast<int>(std::min<size_t>(remaining, 1024)));
+        if (received <= 0) {
+            std::free(body);
+            return nullptr;
+        }
+        total += static_cast<size_t>(received);
+        remaining -= received;
+    }
+    body[total] = '\0';
+    if (out_len != nullptr) {
+        *out_len = total;
+    }
+    return body;
 }
 
 bool normalizeHomeKitCodeParam(const char* value, char* out_digits, size_t out_len) {
@@ -294,6 +327,72 @@ bool parseJsonIntValue(const char* json, const jsmntok_t& token, int* out) {
     }
     *out = static_cast<int>(parsed);
     return true;
+}
+
+const char* luaActionTypeName(lua_vm::ActionType type) {
+    switch (type) {
+        case lua_vm::ActionType::kSetPower: return "set_power";
+        case lua_vm::ActionType::kSetMode: return "set_mode";
+        case lua_vm::ActionType::kSetTargetTemperatureF: return "set_target_temp_f";
+        case lua_vm::ActionType::kSetFan: return "set_fan";
+        case lua_vm::ActionType::kSetVane: return "set_vane";
+        case lua_vm::ActionType::kSetWideVane: return "set_wide_vane";
+        case lua_vm::ActionType::kNone:
+        default: return "none";
+    }
+}
+
+std::string luaActionsJson(const lua_vm::Action* actions, size_t count) {
+    std::string json = "[";
+    for (size_t i = 0; actions != nullptr && i < count; ++i) {
+        if (i > 0) {
+            json += ",";
+        }
+        json += "{\"type\":\"";
+        json += luaActionTypeName(actions[i].type);
+        json += "\",\"value\":\"";
+        json += platform_fs::jsonEscape(actions[i].value);
+        json += "\",\"int_value\":";
+        json += std::to_string(actions[i].intValue);
+        json += "}";
+    }
+    json += "]";
+    return json;
+}
+
+std::string automationStatusJson() {
+    const lua_vm::RuntimeStatus status = lua_vm::getRuntimeStatus();
+    std::string body = "{\"ok\":true";
+    body += ",\"enabled\":";
+    body += status.enabled ? "true" : "false";
+    body += ",\"script_exists\":";
+    body += status.scriptExists ? "true" : "false";
+    body += ",\"script_size\":";
+    body += std::to_string(status.scriptSize);
+    body += ",\"script_max_bytes\":";
+    body += std::to_string(lua_vm::kMaxScriptBytes);
+    body += ",\"last_set\":";
+    body += status.lastSet ? "true" : "false";
+    body += ",\"last_ok\":";
+    body += status.lastOk ? "true" : "false";
+    body += ",\"last_script_loaded\":";
+    body += status.lastScriptLoaded ? "true" : "false";
+    body += ",\"last_hook_found\":";
+    body += status.lastHookFound ? "true" : "false";
+    body += ",\"last_instruction_limit_hit\":";
+    body += status.lastInstructionLimitHit ? "true" : "false";
+    body += ",\"last_peak_bytes\":";
+    body += std::to_string(status.lastPeakBytes);
+    body += ",\"last_hook\":\"";
+    body += platform_fs::jsonEscape(status.lastHook);
+    body += "\",\"last_message\":\"";
+    body += platform_fs::jsonEscape(status.lastMessage);
+    body += "\",\"run_count\":";
+    body += std::to_string(status.runCount);
+    body += ",\"last_actions\":";
+    body += luaActionsJson(status.lastActions, status.lastActionCount);
+    body += "}";
+    return body;
 }
 
 int skipJsonToken(const jsmntok_t* tokens, int count, int index) {
@@ -1116,6 +1215,91 @@ esp_err_t fileDeleteHandler(httpd_req_t* req) {
     return web_http::sendText(req, "application/json", body);
 }
 
+esp_err_t automationStatusHandler(httpd_req_t* req) {
+    const std::string body = automationStatusJson();
+    return web_http::sendText(req, "application/json", body.c_str());
+}
+
+esp_err_t automationScriptGetHandler(httpd_req_t* req) {
+    if (!platform_fs::exists(lua_vm::scriptLogicalPath())) {
+        return web_http::sendText(req, "text/plain; charset=utf-8", "");
+    }
+
+    const size_t size = platform_fs::fileSize(lua_vm::scriptLogicalPath());
+    if (size > lua_vm::kMaxScriptBytes) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        return web_http::sendText(req, "text/plain; charset=utf-8", "automation script is too large");
+    }
+
+    FILE* file = platform_fs::openRead(lua_vm::scriptLogicalPath());
+    if (file == nullptr) {
+        httpd_resp_set_status(req, "404 Not Found");
+        return web_http::sendText(req, "text/plain; charset=utf-8", "automation script not found");
+    }
+
+    std::string body;
+    body.resize(size);
+    const size_t read = size > 0 ? std::fread(body.data(), 1, size, file) : 0;
+    std::fclose(file);
+    if (read != size) {
+        httpd_resp_set_status(req, "500 Internal Server Error");
+        return web_http::sendText(req, "text/plain; charset=utf-8", "automation script read failed");
+    }
+    return web_http::sendText(req, "text/plain; charset=utf-8", body.c_str());
+}
+
+esp_err_t automationScriptPutHandler(httpd_req_t* req) {
+    size_t body_len = 0;
+    char* body = readBodyAlloc(req, lua_vm::kMaxScriptBytes, &body_len);
+    if (body == nullptr) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        return web_http::sendText(req, "application/json", "{\"ok\":false,\"error\":\"automation script is too large\"}");
+    }
+
+    char message[128] = {};
+    platform_fs::createDirectory("/scripts", message, sizeof(message));
+    const bool ok = platform_fs::createFile(lua_vm::scriptLogicalPath(), body, body_len, message, sizeof(message));
+    std::free(body);
+    if (!ok) {
+        return web_http::sendJsonError(req, message);
+    }
+
+    const std::string status = automationStatusJson();
+    return web_http::sendText(req, "application/json", status.c_str());
+}
+
+esp_err_t automationScriptDeleteHandler(httpd_req_t* req) {
+    char message[128] = {};
+    if (platform_fs::exists(lua_vm::scriptLogicalPath()) &&
+        !platform_fs::removePath(lua_vm::scriptLogicalPath(), message, sizeof(message))) {
+        return web_http::sendJsonError(req, message);
+    }
+    lua_vm::setEnabled(false, message, sizeof(message));
+    const std::string status = automationStatusJson();
+    return web_http::sendText(req, "application/json", status.c_str());
+}
+
+esp_err_t automationEnabledHandler(httpd_req_t* req) {
+    char body[64] = {};
+    if (!readBody(req, body, sizeof(body))) {
+        return web_http::sendJsonError(req, "failed to read request body");
+    }
+
+    char value[16] = {};
+    if (!web_http::queryValue(body, "enabled", value, sizeof(value))) {
+        return web_http::sendJsonError(req, "missing enabled");
+    }
+    const bool enabled = std::strcmp(value, "1") == 0 ||
+                         std::strcmp(value, "true") == 0 ||
+                         std::strcmp(value, "on") == 0;
+    char error[96] = {};
+    if (!lua_vm::setEnabled(enabled, error, sizeof(error))) {
+        return web_http::sendJsonError(req, error);
+    }
+    const std::string status = automationStatusJson();
+    return web_http::sendText(req, "application/json", status.c_str());
+}
+
 esp_err_t rebootHandler(httpd_req_t* req) {
     web_http::sendText(req, "application/json", "{\"ok\":true,\"message\":\"rebooting\"}");
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -1177,6 +1361,11 @@ const web_http::Route ROUTES[] = {
     { "/api/log/file", HTTP_GET, logFileHandler },
     { "/api/log/live", HTTP_GET, liveLogHandler },
     { "/api/files/delete", HTTP_POST, fileDeleteHandler },
+    { "/api/automation/status", HTTP_GET, automationStatusHandler },
+    { "/api/automation/script", HTTP_GET, automationScriptGetHandler },
+    { "/api/automation/script", HTTP_PUT, automationScriptPutHandler },
+    { "/api/automation/script", HTTP_DELETE, automationScriptDeleteHandler },
+    { "/api/automation/enabled", HTTP_POST, automationEnabledHandler },
     { "/api/cn105/mock/status", HTTP_GET, cn105MockStatusHandler },
     { "/api/cn105/refresh", HTTP_POST, cn105RefreshHandler },
     { "/api/cn105/mock/build-set", HTTP_GET, cn105BuildSetHandler },

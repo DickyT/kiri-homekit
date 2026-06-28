@@ -10,6 +10,7 @@
  ****************************************************************************/
 
 #include <stdio.h>
+#include <cstring>
 
 #include "app_config.h"
 #include "build_info.h"
@@ -24,6 +25,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "homekit_bridge.h"
+#include "lua_vm.h"
 #include "platform_fs.h"
 #include "platform_led.h"
 #include "platform_log.h"
@@ -32,6 +34,131 @@
 #include "web_server.h"
 
 static const char* TAG = "bootstrap";
+
+namespace {
+
+bool fillCommandFromLuaActions(const lua_vm::RunResult& result,
+                               cn105_core::SetCommand* command,
+                               char* power,
+                               size_t power_len,
+                               char* mode,
+                               size_t mode_len,
+                               char* fan,
+                               size_t fan_len,
+                               char* vane,
+                               size_t vane_len,
+                               char* wide_vane,
+                               size_t wide_vane_len) {
+    if (command == nullptr) {
+        return false;
+    }
+
+    bool any = false;
+    for (size_t i = 0; i < result.actionCount; ++i) {
+        const lua_vm::Action& action = result.actions[i];
+        switch (action.type) {
+            case lua_vm::ActionType::kSetPower:
+                std::snprintf(power, power_len, "%s", action.value);
+                command->hasPower = true;
+                command->power = power;
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetMode:
+                std::snprintf(mode, mode_len, "%s", action.value);
+                command->hasMode = true;
+                command->mode = mode;
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetTargetTemperatureF:
+                command->hasTemperatureF = true;
+                command->temperatureF = action.intValue;
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetFan:
+                std::snprintf(fan, fan_len, "%s", action.value);
+                command->hasFan = true;
+                command->fan = fan;
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetVane:
+                std::snprintf(vane, vane_len, "%s", action.value);
+                command->hasVane = true;
+                command->vane = vane;
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetWideVane:
+                std::snprintf(wide_vane, wide_vane_len, "%s", action.value);
+                command->hasWideVane = true;
+                command->wideVane = wide_vane;
+                any = true;
+                break;
+            case lua_vm::ActionType::kNone:
+            default:
+                break;
+        }
+    }
+    return any;
+}
+
+void runLuaAutomationHook(const char* hook,
+                          const cn105_core::MockState& state,
+                          const cn105_core::MockState* previous) {
+    const lua_vm::RunResult result = lua_vm::runHook(hook, state, previous);
+    if (!result.scriptLoaded || !result.hookFound) {
+        return;
+    }
+    if (!result.ok) {
+        ESP_LOGW(TAG, "Lua hook %s failed: %s", hook, result.message);
+        return;
+    }
+    if (result.actionCount == 0) {
+        return;
+    }
+
+    cn105_core::SetCommand command{};
+    char power[16] = {};
+    char mode[16] = {};
+    char fan[16] = {};
+    char vane[16] = {};
+    char wide_vane[32] = {};
+    if (!fillCommandFromLuaActions(result,
+                                   &command,
+                                   power,
+                                   sizeof(power),
+                                   mode,
+                                   sizeof(mode),
+                                   fan,
+                                   sizeof(fan),
+                                   vane,
+                                   sizeof(vane),
+                                   wide_vane,
+                                   sizeof(wide_vane))) {
+        return;
+    }
+
+    if (device_settings::useRealCn105()) {
+        if (!cn105_transport::queueSetCommand(command)) {
+            ESP_LOGW(TAG, "Lua hook %s could not queue CN105 command", hook);
+        }
+        return;
+    }
+
+    cn105_core::Packet packet{};
+    char error[96] = {};
+    if (!cn105_core::buildSetPacket(command, &packet, error, sizeof(error))) {
+        ESP_LOGW(TAG, "Lua hook %s command build failed: %s", hook, error);
+        return;
+    }
+    if (!cn105_core::applySetPacketToMock(packet.bytes, packet.length, error, sizeof(error))) {
+        ESP_LOGW(TAG, "Lua hook %s mock apply failed: %s", hook, error);
+    }
+}
+
+bool isOn(const cn105_core::MockState& state) {
+    return state.power != nullptr && std::strcmp(state.power, "ON") == 0;
+}
+
+}  // namespace
 
 extern "C" void app_main(void) {
     const esp_err_t settings_err = device_settings::init();
@@ -65,6 +192,13 @@ extern "C" void app_main(void) {
              (chip_info.features & CHIP_FEATURE_BT) ? "BT " : "",
              (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "EmbeddedFlash" : "");
     ESP_LOGI(TAG, "Flash size: %lu MB", static_cast<unsigned long>(flash_size / (1024 * 1024)));
+
+    const lua_vm::ProbeResult lua_probe = lua_vm::runProbe();
+    ESP_LOGI(TAG,
+             "Lua VM probe: ok=%d peak=%u bytes message=%s",
+             lua_probe.ok,
+             static_cast<unsigned>(lua_probe.peakBytes),
+             lua_probe.message);
 
     const esp_err_t led_err = platform_led::init();
     if (led_err != ESP_OK) {
@@ -113,11 +247,24 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "WebUI start failed: %s", esp_err_to_name(web_err));
     }
 
+    cn105_core::MockState previous_state = cn105_core::getMockState();
+    bool has_previous_state = false;
     uint32_t heartbeat = 0;
     while (true) {
         platform_wifi::maintain();
         if (cn105_core::isMockDirty()) {
+            const cn105_core::MockState current_state = cn105_core::getMockState();
             homekit_bridge::syncFromMock();
+            runLuaAutomationHook("on_state_changed",
+                                 current_state,
+                                 has_previous_state ? &previous_state : nullptr);
+            if (has_previous_state && !isOn(previous_state) && isOn(current_state)) {
+                runLuaAutomationHook("on_power_on", current_state, &previous_state);
+            } else if (has_previous_state && isOn(previous_state) && !isOn(current_state)) {
+                runLuaAutomationHook("on_power_off", current_state, &previous_state);
+            }
+            previous_state = current_state;
+            has_previous_state = true;
             cn105_core::clearMockDirty();
         }
         ESP_LOGI(TAG, "Platform heartbeat #%lu - services are alive",

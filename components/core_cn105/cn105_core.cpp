@@ -42,12 +42,14 @@ static const uint8_t INFOHEADER[INFOHEADER_LEN] = {
     0xFC, 0x42, 0x01, 0x30, 0x10
 };
 
-// SET byte 6 bit masks: power, mode, temperature, fan, vertical vane.
+// SET byte 6 bit masks: power, mode, temperature, fan, up/down airflow.
+// Mitsubishi calls this field "vane"; physically it drives the horizontal flap.
 static const uint8_t CONTROL_PACKET_1[5] = {
     0x01, 0x02, 0x04, 0x08, 0x10
 };
 
-// SET byte 7 bit masks: horizontal vane.
+// SET byte 7 bit masks: left/right airflow.
+// Mitsubishi calls this field "wide vane"; physically it drives the vertical vanes.
 static const uint8_t CONTROL_PACKET_2[1] = {
     0x01
 };
@@ -359,7 +361,7 @@ bool buildSetPacket(const SetCommand& command, Packet* packet, char* error, size
     if (command.hasVane) {
         const int index = lookupIndex(VANE_MAP, 7, command.vane);
         if (index < 0) {
-            setError(error, error_len, "unknown vertical vane value");
+            setError(error, error_len, "unknown up/down airflow value");
             return false;
         }
         packet->bytes[12] = VANE[index];
@@ -369,7 +371,7 @@ bool buildSetPacket(const SetCommand& command, Packet* packet, char* error, size
     if (command.hasWideVane) {
         const int index = lookupIndex(WIDEVANE_MAP, 8, command.wideVane);
         if (index < 0) {
-            setError(error, error_len, "unknown horizontal vane value");
+            setError(error, error_len, "unknown left/right airflow value");
             return false;
         }
         packet->bytes[18] = WIDEVANE[index];

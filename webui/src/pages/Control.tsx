@@ -171,13 +171,13 @@ export function ControlPage(): JSX.Element {
               <option>AUTO</option><option>QUIET</option><option>1</option><option>2</option><option>3</option><option>4</option>
             </select>
           </Field>
-          <Field label="Vertical Vane">
+          <Field label="Up/Down Airflow (Horizontal Flap)">
             <select value={form.vane} disabled={busy} onChange={(e) => update("vane", (e.target as HTMLSelectElement).value)}>
               <option>AUTO</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>SWING</option>
             </select>
           </Field>
         </div>
-        <Field label="Horizontal Vane">
+        <Field label="Left/Right Airflow (Vertical Vanes)">
           <select value={form.wide} disabled={busy} onChange={(e) => update("wide", (e.target as HTMLSelectElement).value)}>
             <option value="|">Center</option>
             <option value="<<">Far Left</option>

@@ -115,6 +115,30 @@ export type Status = {
   config?: DeviceConfig;
 };
 
+export type AutomationAction = {
+  type: string;
+  value?: string;
+  int_value?: number;
+};
+
+export type AutomationStatus = {
+  ok?: boolean;
+  enabled: boolean;
+  script_exists: boolean;
+  script_size: number;
+  script_max_bytes: number;
+  last_set: boolean;
+  last_ok: boolean;
+  last_script_loaded: boolean;
+  last_hook_found: boolean;
+  last_instruction_limit_hit: boolean;
+  last_peak_bytes: number;
+  last_hook?: string;
+  last_message?: string;
+  run_count: number;
+  last_actions: AutomationAction[];
+};
+
 export type LogFile = { name: string; size: number; current: boolean };
 export type LogList = {
   active: boolean;
