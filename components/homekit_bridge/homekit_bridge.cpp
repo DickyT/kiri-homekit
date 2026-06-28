@@ -515,9 +515,11 @@ esp_err_t start() {
     if (err != ESP_OK) {
         return err;
     }
-    const esp_err_t fan_err = addAirflowFanService(accessory);
-    if (fan_err != ESP_OK) {
-        return fan_err;
+    if (device_settings::homeKitSeparateAirflowTile()) {
+        const esp_err_t fan_err = addAirflowFanService(accessory);
+        if (fan_err != ESP_OK) {
+            return fan_err;
+        }
     }
 
     hap_add_accessory(accessory);

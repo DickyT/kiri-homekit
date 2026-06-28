@@ -28,6 +28,7 @@ struct Settings {
     char homeKitModel[64] = "";
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
+    bool homeKitSeparateAirflowTile = false;
     bool useRealCn105 = true;
     int statusLedPin = board_profile::kDefaultStatusLedPin;
     int cn105RxPin = board_profile::kDefaultCn105RxPin;
@@ -56,6 +57,7 @@ const char* homeKitManufacturer();
 const char* homeKitModel();
 const char* homeKitSerial();
 const char* homeKitSetupId();
+bool homeKitSeparateAirflowTile();
 bool useRealCn105();
 int statusLedPin();
 int cn105RxPin();

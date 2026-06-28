@@ -69,6 +69,7 @@ export type DeviceConfig = {
   homekit_manufacturer?: string;
   homekit_model?: string;
   homekit_serial?: string;
+  homekit_separate_airflow_tile?: boolean;
   led_pin?: number;
   cn105_mode?: "real" | "mock";
   cn105_rx_pin?: number;

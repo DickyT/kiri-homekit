@@ -106,6 +106,7 @@ function defaultSettings(): SettingsForm {
     "cfg-homekit-manufacturer": "",
     "cfg-homekit-model": "",
     "cfg-homekit-serial": "",
+    "cfg-homekit-separate-airflow-tile": "0",
     "cfg-led-pin": "27",
     "cfg-cn105-mode": "real",
     "cfg-log-level": "info",
@@ -132,6 +133,7 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
     "cfg-homekit-manufacturer": cfg?.homekit_manufacturer ?? "",
     "cfg-homekit-model": cfg?.homekit_model ?? "",
     "cfg-homekit-serial": cfg?.homekit_serial ?? "",
+    "cfg-homekit-separate-airflow-tile": cfg?.homekit_separate_airflow_tile ? "1" : "0",
     "cfg-led-pin": String(cfg?.led_pin ?? defaults.led_pin ?? 27),
     "cfg-cn105-mode": cfg?.cn105_mode ?? "real",
     "cfg-log-level": cfg?.log_level ?? "info",
@@ -384,6 +386,7 @@ export function AdminPage(): JSX.Element {
     params.set("homekit_model", settings["cfg-homekit-model"]?.trim() ?? "");
     params.set("homekit_serial", settings["cfg-homekit-serial"]?.trim() ?? "");
     params.set("homekit_setup_id", (settings["cfg-homekit-setup-id"] ?? "").trim().toUpperCase());
+    params.set("homekit_separate_airflow_tile", settings["cfg-homekit-separate-airflow-tile"] ?? "0");
     params.set("led_pin", settings["cfg-led-pin"] ?? "");
     params.set("cn105_mode", settings["cfg-cn105-mode"] ?? "real");
     for (const k of CN105_ADVANCED_KEYS) {
@@ -617,6 +620,12 @@ export function AdminPage(): JSX.Element {
           <Field label="HomeKit Manufacturer"><input type="text" maxLength={63} value={settings["cfg-homekit-manufacturer"]} onInput={(e) => update("cfg-homekit-manufacturer", (e.target as HTMLInputElement).value)} placeholder="dkt smart home" /></Field>
           <Field label="HomeKit Model"><input type="text" maxLength={63} value={settings["cfg-homekit-model"]} onInput={(e) => update("cfg-homekit-model", (e.target as HTMLInputElement).value)} placeholder="Kiri Bridge" /></Field>
           <Field label="HomeKit Serial"><input type="text" maxLength={63} value={settings["cfg-homekit-serial"]} onInput={(e) => update("cfg-homekit-serial", (e.target as HTMLInputElement).value)} placeholder="KIRI-BRIDGE" /></Field>
+          <Field label="HomeKit Display">
+            <select value={settings["cfg-homekit-separate-airflow-tile"]} onChange={(e) => update("cfg-homekit-separate-airflow-tile", (e.target as HTMLSelectElement).value)}>
+              <option value="0">Single AC tile</option>
+              <option value="1">Separate airflow tile</option>
+            </select>
+          </Field>
           <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
           <Field label="Log Level">
             <select value={settings["cfg-log-level"]} onChange={(e) => update("cfg-log-level", (e.target as HTMLSelectElement).value)}>
