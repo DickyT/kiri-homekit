@@ -56,6 +56,7 @@ int64_t last_command_us = 0;
 constexpr int64_t kGracePeriodUs = 3 * 1000 * 1000;
 hap_acc_t* accessory = nullptr;
 hap_serv_t* heater_cooler = nullptr;
+hap_serv_t* airflow_fan = nullptr;
 hap_char_t* active_char = nullptr;
 hap_char_t* current_temp_char = nullptr;
 hap_char_t* current_state_char = nullptr;
@@ -65,7 +66,11 @@ hap_char_t* heating_threshold_char = nullptr;
 hap_char_t* rotation_speed_char = nullptr;
 hap_char_t* swing_mode_char = nullptr;
 hap_char_t* temp_units_char = nullptr;
+hap_char_t* fan_active_char = nullptr;
+hap_char_t* fan_rotation_speed_char = nullptr;
+hap_char_t* fan_swing_mode_char = nullptr;
 char setup_payload[128] = "";
+char airflow_service_name[96] = "";
 char last_event[40] = "not-started";
 char last_error[96] = "";
 
@@ -245,6 +250,47 @@ int identify(hap_acc_t*) {
     return HAP_SUCCESS;
 }
 
+bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, cn105_core::SetCommand* command) {
+    if (command == nullptr) {
+        return false;
+    }
+    if (character == active_char || character == fan_active_char) {
+        command->hasPower = true;
+        command->power = value.u == kActive ? "ON" : "OFF";
+        return true;
+    }
+    if (character == target_state_char) {
+        command->hasPower = true;
+        command->power = "ON";
+        command->hasMode = true;
+        command->mode = modeFromTargetState(static_cast<uint8_t>(value.u));
+        return true;
+    }
+    if (character == cooling_threshold_char || character == heating_threshold_char) {
+        command->hasTemperatureF = true;
+        command->temperatureF = clampFahrenheit(celsiusToRoundedFahrenheit(value.f));
+        return true;
+    }
+    if (character == rotation_speed_char || character == fan_rotation_speed_char) {
+        command->hasFan = true;
+        command->fan = percentToFan(value.f);
+        return true;
+    }
+    if (character == swing_mode_char || character == fan_swing_mode_char) {
+        command->hasVane = true;
+        command->hasWideVane = true;
+        if (value.u == kSwingEnabled) {
+            command->vane = "SWING";
+            command->wideVane = "SWING";
+        } else {
+            command->vane = "AUTO";
+            command->wideVane = "|";
+        }
+        return true;
+    }
+    return false;
+}
+
 void hapEventHandler(void*, esp_event_base_t, int32_t event_id, void*) {
     switch (event_id) {
         case HAP_EVENT_CTRL_PAIRED:
@@ -288,34 +334,7 @@ int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
     bool should_apply = false;
 
     for (int i = 0; i < count; ++i) {
-        if (write_data[i].hc == active_char) {
-            command.hasPower = true;
-            command.power = write_data[i].val.u == kActive ? "ON" : "OFF";
-            should_apply = true;
-        } else if (write_data[i].hc == target_state_char) {
-            command.hasPower = true;
-            command.power = "ON";
-            command.hasMode = true;
-            command.mode = modeFromTargetState(static_cast<uint8_t>(write_data[i].val.u));
-            should_apply = true;
-        } else if (write_data[i].hc == cooling_threshold_char || write_data[i].hc == heating_threshold_char) {
-            command.hasTemperatureF = true;
-            command.temperatureF = clampFahrenheit(celsiusToRoundedFahrenheit(write_data[i].val.f));
-            should_apply = true;
-        } else if (write_data[i].hc == rotation_speed_char) {
-            command.hasFan = true;
-            command.fan = percentToFan(write_data[i].val.f);
-            should_apply = true;
-        } else if (write_data[i].hc == swing_mode_char) {
-            command.hasVane = true;
-            command.hasWideVane = true;
-            if (write_data[i].val.u == kSwingEnabled) {
-                command.vane = "SWING";
-                command.wideVane = "SWING";
-            } else {
-                command.vane = "AUTO";
-                command.wideVane = "|";
-            }
+        if (addClimateCommandFromWrite(write_data[i].hc, write_data[i].val, &command)) {
             should_apply = true;
         } else if (write_data[i].hc == temp_units_char) {
             updateCharUInt8(temp_units_char, kDisplayFahrenheit);
@@ -338,6 +357,35 @@ int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
     homekit_bridge::syncFromMock();
     last_command_us = esp_timer_get_time();
     setLastEvent("heater-cooler-write");
+    return HAP_SUCCESS;
+}
+
+int airflowFanWrite(hap_write_data_t write_data[], int count, void*, void*) {
+    cn105_core::SetCommand command{};
+    bool should_apply = false;
+
+    for (int i = 0; i < count; ++i) {
+        if (addClimateCommandFromWrite(write_data[i].hc, write_data[i].val, &command)) {
+            should_apply = true;
+        }
+
+        if (write_data[i].status != nullptr) {
+            *(write_data[i].status) = HAP_STATUS_SUCCESS;
+        }
+    }
+
+    if (should_apply && !applyCommand(command)) {
+        for (int i = 0; i < count; ++i) {
+            if (write_data[i].status != nullptr) {
+                *(write_data[i].status) = HAP_STATUS_RES_ABSENT;
+            }
+        }
+        return HAP_FAIL;
+    }
+
+    homekit_bridge::syncFromMock();
+    last_command_us = esp_timer_get_time();
+    setLastEvent("airflow-fan-write");
     return HAP_SUCCESS;
 }
 
@@ -364,6 +412,7 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     }
 
     hap_serv_set_write_cb(heater_cooler, heaterCoolerWrite);
+    hap_serv_mark_primary(heater_cooler);
     hap_acc_add_serv(target_accessory, heater_cooler);
 
     active_char = hap_serv_get_char_by_uuid(heater_cooler, HAP_CHAR_UUID_ACTIVE);
@@ -385,6 +434,36 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
 
     hap_char_float_set_constraints(cooling_threshold_char, kMinTargetCelsius, kMaxTargetCelsius, kTargetStepCelsius);
     hap_char_float_set_constraints(heating_threshold_char, kMinTargetCelsius, kMaxTargetCelsius, kTargetStepCelsius);
+    return ESP_OK;
+}
+
+esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    airflow_fan = hap_serv_fan_v2_create(activeFromMock(state));
+    if (airflow_fan == nullptr) {
+        setLastError("failed to create airflow fan service");
+        return ESP_FAIL;
+    }
+
+    std::snprintf(airflow_service_name, sizeof(airflow_service_name), "%s Airflow", device_settings::deviceName());
+    int ret = hap_serv_add_char(airflow_fan, hap_char_name_create(hapString(airflow_service_name)));
+    ret |= hap_serv_add_char(airflow_fan, hap_char_rotation_speed_create(fanToPercent(state.fan)));
+    ret |= hap_serv_add_char(airflow_fan, hap_char_swing_mode_create(swingFromMock(state)));
+    if (ret != HAP_SUCCESS) {
+        setLastError("failed to add airflow fan characteristics");
+        return ESP_FAIL;
+    }
+
+    hap_serv_set_write_cb(airflow_fan, airflowFanWrite);
+    hap_acc_add_serv(target_accessory, airflow_fan);
+
+    fan_active_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_ACTIVE);
+    fan_rotation_speed_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_ROTATION_SPEED);
+    fan_swing_mode_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_SWING_MODE);
+    if (fan_active_char == nullptr || fan_rotation_speed_char == nullptr || fan_swing_mode_char == nullptr) {
+        setLastError("airflow fan characteristic lookup failed");
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -435,6 +514,10 @@ esp_err_t start() {
     const esp_err_t err = addHeaterCoolerService(accessory);
     if (err != ESP_OK) {
         return err;
+    }
+    const esp_err_t fan_err = addAirflowFanService(accessory);
+    if (fan_err != ESP_OK) {
+        return fan_err;
     }
 
     hap_add_accessory(accessory);
@@ -511,6 +594,9 @@ void syncFromMock() {
     updateCharFloat(rotation_speed_char, fanToPercent(state.fan));
     updateCharUInt8(swing_mode_char, swingFromMock(state));
     updateCharUInt8(temp_units_char, kDisplayFahrenheit);
+    updateCharUInt8(fan_active_char, activeFromMock(state));
+    updateCharFloat(fan_rotation_speed_char, fanToPercent(state.fan));
+    updateCharUInt8(fan_swing_mode_char, swingFromMock(state));
 }
 
 }  // namespace homekit_bridge
