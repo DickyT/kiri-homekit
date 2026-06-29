@@ -31,6 +31,7 @@ struct Status {
 
 esp_err_t start();
 Status getStatus();
+void markDatabaseChanged();
 void syncFromMock();
 
 }  // namespace homekit_bridge

@@ -104,14 +104,45 @@ uint8_t activeFromMock(const cn105_core::MockState& state) {
     return equals(state.power, "ON") ? kActive : kInactive;
 }
 
-uint8_t targetStateFromMock(const cn105_core::MockState& state) {
-    if (equals(state.mode, "HEAT")) {
-        return kTargetHeat;
+uint8_t targetBit(uint8_t target_state) {
+    switch (target_state) {
+        case kTargetAuto: return device_settings::kHomeKitTargetAutoMask;
+        case kTargetHeat: return device_settings::kHomeKitTargetHeatMask;
+        case kTargetCool: return device_settings::kHomeKitTargetCoolMask;
+        default: return 0;
     }
-    if (equals(state.mode, "COOL")) {
+}
+
+bool targetStateAllowed(uint8_t target_state) {
+    return (device_settings::homeKitTargetModeMask() & targetBit(target_state)) != 0;
+}
+
+uint8_t fallbackTargetState(uint8_t mask) {
+    if ((mask & device_settings::kHomeKitTargetCoolMask) != 0) {
         return kTargetCool;
     }
+    if ((mask & device_settings::kHomeKitTargetHeatMask) != 0) {
+        return kTargetHeat;
+    }
     return kTargetAuto;
+}
+
+uint8_t normalizeTargetState(uint8_t target_state) {
+    if (targetStateAllowed(target_state)) {
+        return target_state;
+    }
+    const uint8_t mask = device_settings::homeKitTargetModeMask();
+    return fallbackTargetState(mask);
+}
+
+uint8_t targetStateFromMock(const cn105_core::MockState& state) {
+    if (equals(state.mode, "HEAT")) {
+        return normalizeTargetState(kTargetHeat);
+    }
+    if (equals(state.mode, "COOL")) {
+        return normalizeTargetState(kTargetCool);
+    }
+    return normalizeTargetState(kTargetAuto);
 }
 
 uint8_t currentStateFromMock(const cn105_core::MockState& state) {
@@ -121,20 +152,26 @@ uint8_t currentStateFromMock(const cn105_core::MockState& state) {
     if (!state.operating) {
         return kCurrentIdle;
     }
+    const uint8_t mask = device_settings::homeKitTargetModeMask();
+    const bool can_report_heating = (mask & (device_settings::kHomeKitTargetAutoMask | device_settings::kHomeKitTargetHeatMask)) != 0;
+    const bool can_report_cooling = (mask & (device_settings::kHomeKitTargetAutoMask | device_settings::kHomeKitTargetCoolMask)) != 0;
     if (equals(state.mode, "HEAT")) {
-        return kCurrentHeating;
+        return can_report_heating ? kCurrentHeating : kCurrentIdle;
     }
     if (equals(state.mode, "COOL") || equals(state.mode, "DRY")) {
-        return kCurrentCooling;
+        return can_report_cooling ? kCurrentCooling : kCurrentIdle;
     }
     if (equals(state.mode, "AUTO")) {
-        return state.roomTemperatureF < state.targetTemperatureF ? kCurrentHeating : kCurrentCooling;
+        if (state.roomTemperatureF < state.targetTemperatureF) {
+            return can_report_heating ? kCurrentHeating : kCurrentIdle;
+        }
+        return can_report_cooling ? kCurrentCooling : kCurrentIdle;
     }
     return kCurrentIdle;
 }
 
 const char* modeFromTargetState(uint8_t target_state) {
-    switch (target_state) {
+    switch (normalizeTargetState(target_state)) {
         case kTargetHeat:
             return "HEAT";
         case kTargetCool:
@@ -142,6 +179,34 @@ const char* modeFromTargetState(uint8_t target_state) {
         default:
             return "AUTO";
     }
+}
+
+void applyHvacModeValidValues() {
+    if (target_state_char == nullptr || current_state_char == nullptr) {
+        return;
+    }
+    const uint8_t mask = device_settings::homeKitTargetModeMask();
+    uint8_t target_values[3] = {};
+    uint8_t target_count = 0;
+    for (uint8_t value = kTargetAuto; value <= kTargetCool; ++value) {
+        if ((mask & targetBit(value)) != 0) {
+            target_values[target_count++] = value;
+        }
+    }
+    if (target_count > 0) {
+        hap_char_add_valid_vals(target_state_char, target_values, target_count);
+        hap_char_int_set_constraints(target_state_char, target_values[0], target_values[target_count - 1], 1);
+    }
+
+    uint8_t current_values[4] = {kCurrentInactive, kCurrentIdle};
+    uint8_t current_count = 2;
+    if ((mask & (device_settings::kHomeKitTargetAutoMask | device_settings::kHomeKitTargetHeatMask)) != 0) {
+        current_values[current_count++] = kCurrentHeating;
+    }
+    if ((mask & (device_settings::kHomeKitTargetAutoMask | device_settings::kHomeKitTargetCoolMask)) != 0) {
+        current_values[current_count++] = kCurrentCooling;
+    }
+    hap_char_add_valid_vals(current_state_char, current_values, current_count);
 }
 
 float fanToPercent(const char* fan) {
@@ -260,6 +325,10 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         return true;
     }
     if (character == target_state_char) {
+        if (!targetStateAllowed(static_cast<uint8_t>(value.u))) {
+            setLastError("unsupported HomeKit target mode");
+            return false;
+        }
         command->hasPower = true;
         command->power = "ON";
         command->hasMode = true;
@@ -289,6 +358,15 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         return true;
     }
     return false;
+}
+
+void syncActiveCharsFromCommand(const cn105_core::SetCommand& command) {
+    if (!command.hasPower) {
+        return;
+    }
+    const uint8_t active = equals(command.power, "ON") ? kActive : kInactive;
+    updateCharUInt8(active_char, active);
+    updateCharUInt8(fan_active_char, active);
 }
 
 void hapEventHandler(void*, esp_event_base_t, int32_t event_id, void*) {
@@ -332,8 +410,18 @@ void hapEventHandler(void*, esp_event_base_t, int32_t event_id, void*) {
 int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
     cn105_core::SetCommand command{};
     bool should_apply = false;
+    bool invalid_write = false;
 
     for (int i = 0; i < count; ++i) {
+        if (write_data[i].hc == target_state_char && !targetStateAllowed(static_cast<uint8_t>(write_data[i].val.u))) {
+            invalid_write = true;
+            setLastError("unsupported HomeKit target mode");
+            if (write_data[i].status != nullptr) {
+                *(write_data[i].status) = HAP_STATUS_VAL_INVALID;
+            }
+            continue;
+        }
+
         if (addClimateCommandFromWrite(write_data[i].hc, write_data[i].val, &command)) {
             should_apply = true;
         } else if (write_data[i].hc == temp_units_char) {
@@ -345,6 +433,10 @@ int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
         }
     }
 
+    if (invalid_write) {
+        return HAP_FAIL;
+    }
+
     if (should_apply && !applyCommand(command)) {
         for (int i = 0; i < count; ++i) {
             if (write_data[i].status != nullptr) {
@@ -354,8 +446,9 @@ int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
         return HAP_FAIL;
     }
 
-    homekit_bridge::syncFromMock();
     last_command_us = esp_timer_get_time();
+    syncActiveCharsFromCommand(command);
+    homekit_bridge::syncFromMock();
     setLastEvent("heater-cooler-write");
     return HAP_SUCCESS;
 }
@@ -383,8 +476,9 @@ int airflowFanWrite(hap_write_data_t write_data[], int count, void*, void*) {
         return HAP_FAIL;
     }
 
-    homekit_bridge::syncFromMock();
     last_command_us = esp_timer_get_time();
+    syncActiveCharsFromCommand(command);
+    homekit_bridge::syncFromMock();
     setLastEvent("airflow-fan-write");
     return HAP_SUCCESS;
 }
@@ -435,6 +529,7 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
         return ESP_FAIL;
     }
 
+    applyHvacModeValidValues();
     hap_char_float_set_constraints(cooling_threshold_char, kMinTargetCelsius, kMaxTargetCelsius, kTargetStepCelsius);
     hap_char_float_set_constraints(heating_threshold_char, kMinTargetCelsius, kMaxTargetCelsius, kTargetStepCelsius);
     return ESP_OK;
@@ -577,6 +672,10 @@ Status getStatus() {
     status.lastEvent = last_event;
     status.lastError = last_error;
     return status;
+}
+
+void markDatabaseChanged() {
+    hap_update_config_number();
 }
 
 void syncFromMock() {

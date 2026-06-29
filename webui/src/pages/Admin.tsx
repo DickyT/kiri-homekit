@@ -70,6 +70,12 @@ const CN105_ADVANCED_KEYS = [
   "cfg-cn105-rx-pullup", "cfg-cn105-tx-open-drain",
 ] as const;
 
+const HVAC_TARGET_OPTIONS = [
+  { value: "0", label: "Auto", detail: "Target value 0" },
+  { value: "1", label: "Heat", detail: "Target value 1" },
+  { value: "2", label: "Cool", detail: "Target value 2" },
+] as const;
+
 type SettingsForm = Record<string, string>;
 
 const DEFAULT_AUTOMATION_SCRIPT = `-- Kiri Bridge automation.lua
@@ -107,6 +113,7 @@ function defaultSettings(): SettingsForm {
     "cfg-homekit-model": "",
     "cfg-homekit-serial": "",
     "cfg-homekit-separate-airflow-tile": "1",
+    "cfg-homekit-hvac-modes": "0,1,2",
     "cfg-led-pin": "27",
     "cfg-cn105-mode": "real",
     "cfg-log-level": "info",
@@ -134,6 +141,7 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
     "cfg-homekit-model": cfg?.homekit_model ?? "",
     "cfg-homekit-serial": cfg?.homekit_serial ?? "",
     "cfg-homekit-separate-airflow-tile": cfg?.homekit_separate_airflow_tile === false ? "0" : "1",
+    "cfg-homekit-hvac-modes": normalizeHvacModes(cfg?.homekit_hvac_modes),
     "cfg-led-pin": String(cfg?.led_pin ?? defaults.led_pin ?? 27),
     "cfg-cn105-mode": cfg?.cn105_mode ?? "real",
     "cfg-log-level": cfg?.log_level ?? "info",
@@ -151,6 +159,36 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
 }
 function cn105Summary(f: SettingsForm): string {
   return `${f["cfg-cn105-data-bits"]}${f["cfg-cn105-parity"]}${f["cfg-cn105-stop-bits"]} ${f["cfg-cn105-baud"]} RX G${f["cfg-cn105-rx-pin"]} TX G${f["cfg-cn105-tx-pin"]}`;
+}
+
+function normalizeHvacModes(value: string | undefined): string {
+  const values = new Set<string>();
+  for (const token of String(value ?? "").split(",")) {
+    const v = token.trim();
+    if (v === "0" || v === "1" || v === "2") values.add(v);
+  }
+  const ordered = HVAC_TARGET_OPTIONS.map((o) => o.value).filter((v) => values.has(v));
+  return ordered.length ? ordered.join(",") : "0,1,2";
+}
+
+function hvacModeSet(value: string | undefined): Set<string> {
+  return new Set(normalizeHvacModes(value).split(","));
+}
+
+function hvacModeSummary(value: string | undefined): string {
+  const selected = hvacModeSet(value);
+  return HVAC_TARGET_OPTIONS
+    .filter((o) => selected.has(o.value))
+    .map((o) => `${o.label} (${o.value})`)
+    .join(", ");
+}
+
+function hvacCurrentSummary(value: string | undefined): string {
+  const selected = hvacModeSet(value);
+  const current = ["Inactive (0)", "Idle (1)"];
+  if (selected.has("0") || selected.has("1")) current.push("Heating (2)");
+  if (selected.has("0") || selected.has("2")) current.push("Cooling (3)");
+  return current.join(", ");
 }
 
 // ----- transport pre helper -----
@@ -210,10 +248,14 @@ export function AdminPage(): JSX.Element {
   const [settings, setSettings] = useState<SettingsForm>(defaultSettings);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [savedHomeKitDisplayMode, setSavedHomeKitDisplayMode] = useState("1");
+  const [savedHomeKitHvacModes, setSavedHomeKitHvacModes] = useState("0,1,2");
   const [savedAdvanced, setSavedAdvanced] = useState<SettingsForm | null>(null);
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [cn105Open, setCn105Open] = useState(false);
   const [cn105Snapshot, setCn105Snapshot] = useState<SettingsForm | null>(null);
+  const [hvacOpen, setHvacOpen] = useState(false);
+  const [hvacSnapshot, setHvacSnapshot] = useState<string | null>(null);
   const [otaModalState, setOtaModalState] = useState<OtaUploadResult | null>(null);
   const [otaApplying, setOtaApplying] = useState(false);
   const [otaApplyStatus, setOtaApplyStatus] = useState("");
@@ -239,11 +281,17 @@ export function AdminPage(): JSX.Element {
   const [tick, setTick] = useState(0);
   const rebootTimer = useRef<number | undefined>(undefined);
   const otaInputRef = useRef<HTMLInputElement>(null);
+  const homeKitPresentationChanged =
+    (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
+    normalizeHvacModes(settings["cfg-homekit-hvac-modes"]) !== savedHomeKitHvacModes;
 
   // Bootstrap settings from first status that arrives.
   useEffect(() => {
     if (settingsLoaded || !s) return;
-    setSettings(settingsFromConfig(s.config, s.device, s.board));
+    const initialSettings = settingsFromConfig(s.config, s.device, s.board);
+    setSettings(initialSettings);
+    setSavedHomeKitDisplayMode(initialSettings["cfg-homekit-separate-airflow-tile"] ?? "1");
+    setSavedHomeKitHvacModes(normalizeHvacModes(initialSettings["cfg-homekit-hvac-modes"]));
     setTransport(s.cn105.transport_status);
     setSettingsLoaded(true);
   }, [s]);
@@ -301,6 +349,30 @@ export function AdminPage(): JSX.Element {
     }
     setCn105Snapshot(null);
     setCn105Open(false);
+  }
+
+  function openHvacModes(): void {
+    setHvacSnapshot(settings["cfg-homekit-hvac-modes"] ?? "0,1,2");
+    setHvacOpen(true);
+  }
+
+  function closeHvacModes(keep: boolean): void {
+    if (!keep && hvacSnapshot !== null) {
+      setSettings((prev) => ({ ...prev, "cfg-homekit-hvac-modes": hvacSnapshot }));
+    }
+    setHvacSnapshot(null);
+    setHvacOpen(false);
+  }
+
+  function toggleHvacMode(value: string): void {
+    const selected = hvacModeSet(settings["cfg-homekit-hvac-modes"]);
+    if (selected.has(value)) {
+      if (selected.size === 1) return;
+      selected.delete(value);
+    } else {
+      selected.add(value);
+    }
+    update("cfg-homekit-hvac-modes", HVAC_TARGET_OPTIONS.map((o) => o.value).filter((v) => selected.has(v)).join(","));
   }
 
   async function refreshTransport(): Promise<void> {
@@ -387,6 +459,7 @@ export function AdminPage(): JSX.Element {
     params.set("homekit_serial", settings["cfg-homekit-serial"]?.trim() ?? "");
     params.set("homekit_setup_id", (settings["cfg-homekit-setup-id"] ?? "").trim().toUpperCase());
     params.set("homekit_separate_airflow_tile", settings["cfg-homekit-separate-airflow-tile"] ?? "0");
+    params.set("homekit_hvac_modes", normalizeHvacModes(settings["cfg-homekit-hvac-modes"]));
     params.set("led_pin", settings["cfg-led-pin"] ?? "");
     params.set("cn105_mode", settings["cfg-cn105-mode"] ?? "real");
     for (const k of CN105_ADVANCED_KEYS) {
@@ -626,6 +699,11 @@ export function AdminPage(): JSX.Element {
               <option value="1">Separate airflow tile</option>
             </select>
           </Field>
+          <Field label="Supported HVAC Modes">
+            <button class="btn config-summary" type="button" onClick={openHvacModes} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
+              {hvacModeSummary(settings["cfg-homekit-hvac-modes"])}
+            </button>
+          </Field>
           <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
           <Field label="Log Level">
             <select value={settings["cfg-log-level"]} onChange={(e) => update("cfg-log-level", (e.target as HTMLSelectElement).value)}>
@@ -649,6 +727,12 @@ export function AdminPage(): JSX.Element {
             </button>
           </Field>
         </div>
+        {homeKitPresentationChanged && (
+          <div class="danger-banner" style={{ marginTop: "14px" }}>
+            <strong>HomeKit re-add required</strong>
+            After saving this HomeKit presentation change, remove this accessory from Apple Home and add it again so the Home app reloads the tile and mode list. Do not use Reset HomeKit on Kiri Bridge.
+          </div>
+        )}
         <div class="btns">
           <Btn variant="primary" disabled={!settingsDirty} onClick={saveConfig}>{settingsDirty ? "Save and Reboot *" : "Save and Reboot"}</Btn>
         </div>
@@ -718,6 +802,50 @@ export function AdminPage(): JSX.Element {
         <div class="modal-actions">
           <Btn variant="primary" onClick={() => closeCn105(true)}>Confirm</Btn>
           <Btn onClick={() => closeCn105(false)}>Cancel</Btn>
+        </div>
+      </Modal>
+
+      {/* HomeKit HVAC mode modal */}
+      <Modal
+        open={hvacOpen}
+        onClose={() => closeHvacModes(false)}
+        title="Supported HVAC Modes"
+        subtitle="Choose the HomeKit Target Heater Cooler State values this unit should advertise. Current state values are derived automatically."
+        size="wide"
+      >
+        <div class="danger-banner">
+          <strong>Apple Home cache</strong>
+          If you change this, save and reboot first, then remove and re-add the accessory in Apple Home. You do not need to reset HomeKit inside Kiri Bridge.
+        </div>
+        <div class="grid2">
+          {HVAC_TARGET_OPTIONS.map((option) => {
+            const selected = hvacModeSet(settings["cfg-homekit-hvac-modes"]);
+            const checked = selected.has(option.value);
+            const disabled = checked && selected.size === 1;
+            return (
+              <Field key={option.value} label={option.label}>
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => toggleHvacMode(option.value)}
+                  />
+                  <span>{option.detail}</span>
+                </label>
+              </Field>
+            );
+          })}
+        </div>
+        <div class="subtitle" style={{ marginTop: "14px" }}>
+          Target values: {hvacModeSummary(settings["cfg-homekit-hvac-modes"])}
+        </div>
+        <div class="subtitle" style={{ marginTop: "8px" }}>
+          Current values exposed: {hvacCurrentSummary(settings["cfg-homekit-hvac-modes"])}
+        </div>
+        <div class="modal-actions">
+          <Btn variant="primary" onClick={() => closeHvacModes(true)}>Confirm</Btn>
+          <Btn onClick={() => closeHvacModes(false)}>Cancel</Btn>
         </div>
       </Modal>
 

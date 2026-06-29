@@ -19,6 +19,11 @@
 
 namespace device_settings {
 
+inline constexpr uint8_t kHomeKitTargetAutoMask = 1u << 0;
+inline constexpr uint8_t kHomeKitTargetHeatMask = 1u << 1;
+inline constexpr uint8_t kHomeKitTargetCoolMask = 1u << 2;
+inline constexpr uint8_t kHomeKitTargetAllMask = kHomeKitTargetAutoMask | kHomeKitTargetHeatMask | kHomeKitTargetCoolMask;
+
 struct Settings {
     char deviceName[64] = "";
     char wifiSsid[33] = "";
@@ -28,7 +33,8 @@ struct Settings {
     char homeKitModel[64] = "";
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
-    bool homeKitSeparateAirflowTile = false;
+    bool homeKitSeparateAirflowTile = true;
+    uint8_t homeKitTargetModeMask = kHomeKitTargetAllMask;
     bool useRealCn105 = true;
     int statusLedPin = board_profile::kDefaultStatusLedPin;
     int cn105RxPin = board_profile::kDefaultCn105RxPin;
@@ -58,6 +64,8 @@ const char* homeKitModel();
 const char* homeKitSerial();
 const char* homeKitSetupId();
 bool homeKitSeparateAirflowTile();
+uint8_t homeKitTargetModeMask();
+const char* homeKitTargetModeMaskName();
 bool useRealCn105();
 int statusLedPin();
 int cn105RxPin();
@@ -77,5 +85,6 @@ const char* cn105FormatName();
 bool save(const Settings& requested, bool* reboot_required, char* message, size_t message_len);
 bool parseLogLevel(const char* value, esp_log_level_t* out);
 bool parseCn105Parity(const char* value, char* out);
+bool parseHomeKitTargetModeMask(const char* value, uint8_t* out);
 
 }  // namespace device_settings

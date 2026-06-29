@@ -34,6 +34,7 @@ constexpr char kDefaultHomeKitModel[] = "Kiri Bridge";
 constexpr char kDefaultHomeKitSerial[] = "KIRI-BRIDGE";
 constexpr char kDefaultHomeKitSetupId[] = "DKT1";
 constexpr bool kDefaultHomeKitSeparateAirflowTile = true;
+constexpr uint8_t kDefaultHomeKitTargetModeMask = device_settings::kHomeKitTargetAllMask;
 constexpr bool kDefaultUseRealCn105 = true;
 constexpr int kDefaultStatusLedPin = board_profile::kDefaultStatusLedPin;
 constexpr int kDefaultCn105RxPin = board_profile::kDefaultCn105RxPin;
@@ -52,6 +53,7 @@ bool initialized = false;
 char setup_code_canonical[12] = "";
 char setup_code_display[10] = "";
 char cn105_format_name[4] = "8E1";
+char homekit_target_mode_name[8] = "0,1,2";
 
 const char* logLevelNameLocal(esp_log_level_t level) {
     switch (level) {
@@ -62,6 +64,64 @@ const char* logLevelNameLocal(esp_log_level_t level) {
         case ESP_LOG_VERBOSE: return "verbose";
         default: return "unknown";
     }
+}
+
+bool parseHomeKitTargetModeMaskLocal(const char* value, uint8_t* out) {
+    if (value == nullptr || out == nullptr) {
+        return false;
+    }
+    uint8_t mask = 0;
+    bool saw_value = false;
+    bool expect_value = true;
+    for (size_t i = 0; value[i] != '\0'; ++i) {
+        const char c = value[i];
+        if (c == '0' || c == '1' || c == '2') {
+            if (!expect_value) {
+                return false;
+            }
+            const uint8_t bit = static_cast<uint8_t>(1u << (c - '0'));
+            mask |= bit;
+            saw_value = true;
+            expect_value = false;
+        } else if (c == ',' || c == ' ' || c == '\t') {
+            if (!saw_value || expect_value) {
+                return false;
+            }
+            expect_value = true;
+        } else {
+            return false;
+        }
+    }
+    if (!saw_value || expect_value || (mask & ~device_settings::kHomeKitTargetAllMask) != 0) {
+        return false;
+    }
+    *out = mask;
+    return true;
+}
+
+void formatHomeKitTargetModeMask(uint8_t mask, char* out, size_t out_len) {
+    if (out == nullptr || out_len == 0) {
+        return;
+    }
+    char tmp[8] = "";
+    size_t pos = 0;
+    for (uint8_t value = 0; value <= 2; ++value) {
+        if ((mask & (1u << value)) == 0) {
+            continue;
+        }
+        if (pos > 0 && pos + 1 < sizeof(tmp)) {
+            tmp[pos++] = ',';
+        }
+        if (pos + 1 < sizeof(tmp)) {
+            tmp[pos++] = static_cast<char>('0' + value);
+        }
+    }
+    tmp[pos] = '\0';
+    std::snprintf(out, out_len, "%s", pos == 0 ? "0,1,2" : tmp);
+}
+
+void refreshHomeKitTargetModeName() {
+    formatHomeKitTargetModeMask(settings.homeKitTargetModeMask, homekit_target_mode_name, sizeof(homekit_target_mode_name));
 }
 
 void copyString(char* out, size_t out_len, const char* value) {
@@ -85,6 +145,7 @@ void loadDefaults() {
     copyString(settings.homeKitSerial, sizeof(settings.homeKitSerial), kDefaultHomeKitSerial);
     copyString(settings.homeKitSetupId, sizeof(settings.homeKitSetupId), kDefaultHomeKitSetupId);
     settings.homeKitSeparateAirflowTile = kDefaultHomeKitSeparateAirflowTile;
+    settings.homeKitTargetModeMask = kDefaultHomeKitTargetModeMask;
     settings.useRealCn105 = kDefaultUseRealCn105;
     settings.statusLedPin = kDefaultStatusLedPin;
     settings.cn105RxPin = kDefaultCn105RxPin;
@@ -327,6 +388,13 @@ esp_err_t init() {
     loadStringSetting(handle, "hk_model", settings.homeKitModel, sizeof(settings.homeKitModel), &wrote_defaults);
     loadStringSetting(handle, "hk_serial", settings.homeKitSerial, sizeof(settings.homeKitSerial), &wrote_defaults);
     loadBoolSetting(handle, "hk_airtile", &settings.homeKitSeparateAirflowTile, &wrote_defaults);
+    char stored_hvac[12] = {};
+    formatHomeKitTargetModeMask(settings.homeKitTargetModeMask, stored_hvac, sizeof(stored_hvac));
+    loadStringSetting(handle, "hk_hvac", stored_hvac, sizeof(stored_hvac), &wrote_defaults);
+    if (!parseHomeKitTargetModeMaskLocal(stored_hvac, &settings.homeKitTargetModeMask)) {
+        ESP_LOGW(TAG, "Invalid HomeKit target mode mask in NVS: %s; using default 0,1,2", stored_hvac);
+        settings.homeKitTargetModeMask = kDefaultHomeKitTargetModeMask;
+    }
 
     char stored_setup_id[sizeof(settings.homeKitSetupId)] = {};
     copyString(stored_setup_id, sizeof(stored_setup_id), settings.homeKitSetupId);
@@ -396,12 +464,14 @@ esp_err_t init() {
     nvs_close(handle);
     refreshCodeFormats();
     refreshCn105FormatName();
+    refreshHomeKitTargetModeName();
     initialized = true;
     ESP_LOGI(TAG,
-             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
+             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s hk_hvac=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
              settings.deviceName,
              setup_code_display,
              settings.homeKitSeparateAirflowTile ? "on" : "off",
+             homekit_target_mode_name,
              settings.useRealCn105 ? "real" : "mock",
              settings.statusLedPin,
              settings.wifiSsid,
@@ -467,6 +537,14 @@ bool useRealCn105() {
 
 bool homeKitSeparateAirflowTile() {
     return settings.homeKitSeparateAirflowTile;
+}
+
+uint8_t homeKitTargetModeMask() {
+    return settings.homeKitTargetModeMask;
+}
+
+const char* homeKitTargetModeMaskName() {
+    return homekit_target_mode_name;
 }
 
 int statusLedPin() {
@@ -567,6 +645,10 @@ bool parseCn105Parity(const char* value, char* out) {
     return true;
 }
 
+bool parseHomeKitTargetModeMask(const char* value, uint8_t* out) {
+    return parseHomeKitTargetModeMaskLocal(value, out);
+}
+
 bool save(const Settings& requested, bool* reboot_required, char* message, size_t message_len) {
     if (!initialized && init() != ESP_OK) {
         setMessage(message, message_len, "settings init failed");
@@ -615,6 +697,10 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
         setMessage(message, message_len, "poll intervals are too small");
         return false;
     }
+    if (next.homeKitTargetModeMask == 0 || (next.homeKitTargetModeMask & ~kHomeKitTargetAllMask) != 0) {
+        setMessage(message, message_len, "invalid HomeKit target modes");
+        return false;
+    }
 
     nvs_handle_t handle = 0;
     if (nvs_open(kNamespace, NVS_READWRITE, &handle) != ESP_OK) {
@@ -632,6 +718,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSerial, next.homeKitSerial) != 0;
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSetupId, next.homeKitSetupId) != 0;
     needs_reboot = needs_reboot || settings.homeKitSeparateAirflowTile != next.homeKitSeparateAirflowTile;
+    needs_reboot = needs_reboot || settings.homeKitTargetModeMask != next.homeKitTargetModeMask;
     needs_reboot = needs_reboot || settings.useRealCn105 != next.useRealCn105;
     needs_reboot = needs_reboot || settings.statusLedPin != next.statusLedPin;
     needs_reboot = needs_reboot || settings.cn105RxPin != next.cn105RxPin;
@@ -652,6 +739,9 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     nvs_set_str(handle, "hk_serial", next.homeKitSerial);
     nvs_set_str(handle, "hk_setupid", next.homeKitSetupId);
     nvs_set_u8(handle, "hk_airtile", next.homeKitSeparateAirflowTile ? 1 : 0);
+    char stored_homekit_target_modes[8] = {};
+    formatHomeKitTargetModeMask(next.homeKitTargetModeMask, stored_homekit_target_modes, sizeof(stored_homekit_target_modes));
+    nvs_set_str(handle, "hk_hvac", stored_homekit_target_modes);
     nvs_set_u8(handle, "use_real", next.useRealCn105 ? 1 : 0);
     nvs_set_i32(handle, "led_pin", next.statusLedPin);
     nvs_set_i32(handle, "rx_pin", next.cn105RxPin);
@@ -676,6 +766,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     settings = next;
     refreshCodeFormats();
     refreshCn105FormatName();
+    refreshHomeKitTargetModeName();
     if (reboot_required != nullptr) {
         *reboot_required = needs_reboot;
     }
@@ -683,7 +774,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
                   message_len,
                   "%s",
                   needs_reboot
-                      ? "Settings saved. Reboot required for device name, HomeKit metadata, HomeKit display mode, HomeKit setup code, CN105 mode, or baud changes."
+                      ? "Settings saved. Reboot required for device name, HomeKit metadata, HomeKit display mode, HomeKit supported modes, HomeKit setup code, CN105 mode, or baud changes."
                       : "Settings saved.");
     return true;
 }

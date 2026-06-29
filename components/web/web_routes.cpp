@@ -219,6 +219,16 @@ std::string quotedJson(const char* value) {
     return "\"" + platform_fs::jsonEscape(value == nullptr ? "" : value) + "\"";
 }
 
+bool homeKitDatabaseSettingsChanged(const device_settings::Settings& before, const device_settings::Settings& after) {
+    return std::strcmp(before.deviceName, after.deviceName) != 0 ||
+           std::strcmp(before.homeKitManufacturer, after.homeKitManufacturer) != 0 ||
+           std::strcmp(before.homeKitModel, after.homeKitModel) != 0 ||
+           std::strcmp(before.homeKitSerial, after.homeKitSerial) != 0 ||
+           std::strcmp(before.homeKitSetupId, after.homeKitSetupId) != 0 ||
+           before.homeKitSeparateAirflowTile != after.homeKitSeparateAirflowTile ||
+           before.homeKitTargetModeMask != after.homeKitTargetModeMask;
+}
+
 std::string deviceCfgJson() {
     const device_settings::Settings& s = device_settings::get();
     std::string body = "{\n";
@@ -231,6 +241,7 @@ std::string deviceCfgJson() {
     body += "  \"hk_serial\": " + quotedJson(s.homeKitSerial) + ",\n";
     body += "  \"hk_setupid\": " + quotedJson(s.homeKitSetupId) + ",\n";
     body += "  \"hk_airtile\": " + std::string(s.homeKitSeparateAirflowTile ? "true" : "false") + ",\n";
+    body += "  \"hk_hvac\": " + quotedJson(device_settings::homeKitTargetModeMaskName()) + ",\n";
     body += "  \"use_real\": " + std::string(s.useRealCn105 ? "true" : "false") + ",\n";
     body += "  \"led_pin\": " + std::to_string(s.statusLedPin) + ",\n";
     body += "  \"rx_pin\": " + std::to_string(s.cn105RxPin) + ",\n";
@@ -449,6 +460,16 @@ bool applyDeviceCfgJson(const char* json, size_t len, device_settings::Settings*
         if (tokenEquals(json, key, "hk_setupid") && tokenText(json, value, out->homeKitSetupId, sizeof(out->homeKitSetupId))) { i = next; continue; }
         if (tokenEquals(json, key, "hk_airtile") && parseJsonBoolValue(json, value, &boolean)) {
             out->homeKitSeparateAirflowTile = boolean;
+            i = next;
+            continue;
+        }
+        if (tokenEquals(json, key, "hk_hvac") && tokenText(json, value, text, sizeof(text))) {
+            uint8_t mask = device_settings::kHomeKitTargetAllMask;
+            if (!device_settings::parseHomeKitTargetModeMask(text, &mask)) {
+                std::snprintf(error, error_len, "invalid HomeKit target modes");
+                return false;
+            }
+            out->homeKitTargetModeMask = mask;
             i = next;
             continue;
         }
@@ -678,6 +699,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   "\"homekit_serial\":\"%s\","
                   "\"homekit_setup_id\":\"%s\","
                   "\"homekit_separate_airflow_tile\":%s,"
+                  "\"homekit_hvac_modes\":\"%s\","
                   "\"led_pin\":%d,"
                   "\"cn105_mode\":\"%s\","
                   "\"cn105_rx_pin\":%d,"
@@ -724,6 +746,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   esc_config_hk_serial,
                   esc_config_hk_setup_id,
                   config.homeKitSeparateAirflowTile ? "true" : "false",
+                  device_settings::homeKitTargetModeMaskName(),
                   config.statusLedPin,
                   transport_mode,
                   config.cn105RxPin,
@@ -1025,6 +1048,13 @@ esp_err_t configSaveHandler(httpd_req_t* req) {
                                           std::strcmp(value, "false") != 0 &&
                                           std::strcmp(value, "off") != 0;
     }
+    if (web_http::queryValue(body, "homekit_hvac_modes", value, sizeof(value))) {
+        uint8_t mask = device_settings::kHomeKitTargetAllMask;
+        if (!device_settings::parseHomeKitTargetModeMask(value, &mask)) {
+            return web_http::sendJsonError(req, "invalid HomeKit target modes");
+        }
+        next.homeKitTargetModeMask = mask;
+    }
     if (web_http::queryValue(body, "led_pin", value, sizeof(value))) {
         next.statusLedPin = std::atoi(value);
     }
@@ -1078,11 +1108,15 @@ esp_err_t configSaveHandler(httpd_req_t* req) {
     }
 
     bool reboot_required = false;
+    const bool homekit_database_changed = homeKitDatabaseSettingsChanged(device_settings::get(), next);
     char message[192] = {};
     if (!device_settings::save(next, &reboot_required, message, sizeof(message))) {
         return web_http::sendJsonError(req, message);
     }
 
+    if (homekit_database_changed) {
+        homekit_bridge::markDatabaseChanged();
+    }
     platform_log::applyConfiguredLogLevel();
 
     char escaped[256] = {};
@@ -1114,11 +1148,15 @@ esp_err_t deviceCfgJsonPostHandler(httpd_req_t* req) {
     }
 
     bool reboot_required = false;
+    const bool homekit_database_changed = homeKitDatabaseSettingsChanged(device_settings::get(), next);
     char message[192] = {};
     if (!device_settings::save(next, &reboot_required, message, sizeof(message))) {
         return web_http::sendJsonError(req, message);
     }
 
+    if (homekit_database_changed) {
+        homekit_bridge::markDatabaseChanged();
+    }
     platform_log::applyConfiguredLogLevel();
 
     char escaped[256] = {};
