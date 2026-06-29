@@ -391,6 +391,7 @@ int airflowFanWrite(hap_write_data_t write_data[], int count, void*, void*) {
 
 esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     const cn105_core::MockState state = cn105_core::getMockState();
+    const bool separate_airflow_tile = device_settings::homeKitSeparateAirflowTile();
     heater_cooler = hap_serv_heater_cooler_create(activeFromMock(state),
                                                   fahrenheitToCelsius(state.roomTemperatureF),
                                                   currentStateFromMock(state),
@@ -403,8 +404,10 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     int ret = hap_serv_add_char(heater_cooler, hap_char_name_create(hapString(device_settings::deviceName())));
     ret |= hap_serv_add_char(heater_cooler, hap_char_cooling_threshold_temperature_create(fahrenheitToCelsius(state.targetTemperatureF)));
     ret |= hap_serv_add_char(heater_cooler, hap_char_heating_threshold_temperature_create(fahrenheitToCelsius(state.targetTemperatureF)));
-    ret |= hap_serv_add_char(heater_cooler, hap_char_rotation_speed_create(fanToPercent(state.fan)));
-    ret |= hap_serv_add_char(heater_cooler, hap_char_swing_mode_create(swingFromMock(state)));
+    if (!separate_airflow_tile) {
+        ret |= hap_serv_add_char(heater_cooler, hap_char_rotation_speed_create(fanToPercent(state.fan)));
+        ret |= hap_serv_add_char(heater_cooler, hap_char_swing_mode_create(swingFromMock(state)));
+    }
     ret |= hap_serv_add_char(heater_cooler, hap_char_temperature_display_units_create(kDisplayFahrenheit));
     if (ret != HAP_SUCCESS) {
         setLastError("failed to add heater cooler characteristics");
@@ -427,7 +430,7 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
 
     if (active_char == nullptr || current_temp_char == nullptr || current_state_char == nullptr ||
         target_state_char == nullptr || cooling_threshold_char == nullptr || heating_threshold_char == nullptr ||
-        rotation_speed_char == nullptr || swing_mode_char == nullptr || temp_units_char == nullptr) {
+        temp_units_char == nullptr || (!separate_airflow_tile && (rotation_speed_char == nullptr || swing_mode_char == nullptr))) {
         setLastError("heater cooler characteristic lookup failed");
         return ESP_FAIL;
     }

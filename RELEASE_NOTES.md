@@ -15,7 +15,8 @@ This release focuses on board support, setup reliability, and HomeKit presentati
 
 - Fixed airflow naming in the UI so horizontal flaps are described as up/down airflow and vertical vanes are described as left/right airflow.
 - Added optional HomeKit airflow exposure through a separate Fan/Airflow service. This lets Apple Home users choose whether the AC appears as combined or separate tiles.
-- Added a `HomeKit Display` setting in the Admin UI. The default remains the older single AC tile behavior; selecting `Separate airflow tile` saves the preference to NVS and applies after reboot.
+- Added a `HomeKit Display` setting in the Admin UI. The default is now `Separate airflow tile`; selecting `Single AC tile` restores the older grouped behavior and applies after reboot.
+- In separate airflow mode, fan speed and swing controls are exposed only on the Fan/Airflow service to avoid duplicate Rotation Speed and Swing Mode controls in apps such as Eve. The main Heater Cooler service still keeps its own Active control.
 
 ### Automation
 
