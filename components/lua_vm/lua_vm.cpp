@@ -32,6 +32,9 @@ constexpr const char* kKvNamespace = "lua_kv";
 constexpr size_t kArenaSize = 32 * 1024;
 constexpr int kInstructionLimit = 8000;
 constexpr int kApiVersion = 1;
+constexpr size_t kKvMaxEntries = 16;
+constexpr size_t kKvMaxValueLength = 95;
+constexpr size_t kKvMaxTotalBytes = 1024;
 
 platform_lock::RecursiveMutex status_lock;
 lua_vm::RuntimeStatus runtime_status{};
@@ -359,7 +362,7 @@ bool validKvKey(const char* key) {
         return false;
     }
     const size_t len = std::strlen(key);
-    if (len == 0 || len > 31) {
+    if (len == 0 || len > 15) {
         return false;
     }
     for (size_t i = 0; i < len; ++i) {
@@ -369,6 +372,30 @@ bool validKvKey(const char* key) {
         }
     }
     return true;
+}
+
+bool kvUsage(nvs_handle_t handle, size_t* entries, size_t* total_bytes) {
+    *entries = 0;
+    *total_bytes = 0;
+    nvs_iterator_t iterator = nullptr;
+    esp_err_t err = nvs_entry_find_in_handle(handle, NVS_TYPE_STR, &iterator);
+    while (err == ESP_OK && iterator != nullptr) {
+        nvs_entry_info_t info{};
+        if (nvs_entry_info(iterator, &info) != ESP_OK) {
+            nvs_release_iterator(iterator);
+            return false;
+        }
+        size_t value_len = 0;
+        if (nvs_get_str(handle, info.key, nullptr, &value_len) != ESP_OK) {
+            nvs_release_iterator(iterator);
+            return false;
+        }
+        ++(*entries);
+        *total_bytes += std::strlen(info.key) + value_len;
+        err = nvs_entry_next(&iterator);
+    }
+    nvs_release_iterator(iterator);
+    return err == ESP_ERR_NVS_NOT_FOUND;
 }
 
 int lKvGet(lua_State* L) {
@@ -407,7 +434,14 @@ int lKvSet(lua_State* L) {
     } else if (lua_isnumber(L, 2)) {
         std::snprintf(value, sizeof(value), "%.6g", lua_tonumber(L, 2));
     } else {
-        copyString(value, sizeof(value), luaL_checkstring(L, 2));
+        const char* string_value = luaL_checkstring(L, 2);
+        if (std::strlen(string_value) > kKvMaxValueLength) {
+            return luaL_error(L, "kv.set: value exceeds %u bytes", static_cast<unsigned>(kKvMaxValueLength));
+        }
+        copyString(value, sizeof(value), string_value);
+    }
+    if (std::strlen(value) > kKvMaxValueLength) {
+        return luaL_error(L, "kv.set: value exceeds %u bytes", static_cast<unsigned>(kKvMaxValueLength));
     }
 
     ScriptContext* ctx = context(L);
@@ -419,8 +453,66 @@ int lKvSet(lua_State* L) {
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open(kKvNamespace, NVS_READWRITE, &handle);
     if (err == ESP_OK) {
+        char previous[96] = {};
+        size_t previous_len = sizeof(previous);
+        const esp_err_t previous_err = nvs_get_str(handle, key, previous, &previous_len);
+        if (previous_err != ESP_OK && previous_err != ESP_ERR_NVS_NOT_FOUND) {
+            nvs_close(handle);
+            return luaL_error(L, "kv.set: failed to read existing value");
+        }
+        if (previous_err == ESP_OK && std::strcmp(previous, value) == 0) {
+            nvs_close(handle);
+            lua_pushboolean(L, true);
+            return 1;
+        }
+
+        size_t entries = 0;
+        size_t total_bytes = 0;
+        if (!kvUsage(handle, &entries, &total_bytes)) {
+            nvs_close(handle);
+            return luaL_error(L, "kv.set: failed to inspect storage");
+        }
+        if (previous_err == ESP_ERR_NVS_NOT_FOUND && entries >= kKvMaxEntries) {
+            nvs_close(handle);
+            return luaL_error(L, "kv.set: storage is limited to %u keys", static_cast<unsigned>(kKvMaxEntries));
+        }
+        if (previous_err == ESP_OK) {
+            total_bytes -= std::strlen(key) + previous_len;
+        }
+        const size_t new_total = total_bytes + std::strlen(key) + std::strlen(value) + 1;
+        if (new_total > kKvMaxTotalBytes) {
+            nvs_close(handle);
+            return luaL_error(L, "kv.set: storage exceeds %u bytes", static_cast<unsigned>(kKvMaxTotalBytes));
+        }
+
         err = nvs_set_str(handle, key, value);
         if (err == ESP_OK) {
+            err = nvs_commit(handle);
+        }
+        nvs_close(handle);
+    }
+    lua_pushboolean(L, err == ESP_OK);
+    return 1;
+}
+
+int lKvDelete(lua_State* L) {
+    const char* key = luaL_checkstring(L, 1);
+    if (!validKvKey(key)) {
+        return luaL_error(L, "invalid kv key");
+    }
+    ScriptContext* ctx = context(L);
+    if (ctx != nullptr && ctx->validationOnly) {
+        lua_pushboolean(L, true);
+        return 1;
+    }
+
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(kKvNamespace, NVS_READWRITE, &handle);
+    if (err == ESP_OK) {
+        err = nvs_erase_key(handle, key);
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK;
+        } else if (err == ESP_OK) {
             err = nvs_commit(handle);
         }
         nvs_close(handle);
@@ -516,9 +608,10 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     setFunction(L, "set_swing", lAcSetSwing, ctx);
     lua_setglobal(L, "ac");
 
-    lua_createtable(L, 0, 2);
+    lua_createtable(L, 0, 3);
     setFunction(L, "get", lKvGet, ctx);
     setFunction(L, "set", lKvSet, ctx);
+    setFunction(L, "delete", lKvDelete, ctx);
     lua_setglobal(L, "kv");
 
     lua_createtable(L, 0, 2);
