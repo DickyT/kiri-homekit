@@ -813,17 +813,19 @@ export function AdminPage(): JSX.Element {
             </button>
             {!separateHomeKitDisplay && <span class="field-hint">Select Separate airflow tile above to configure extra tilt and Swing tiles.</span>}
           </Field>
-          <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
+          <Field label="Status LED GPIO" help="GPIO pin used for the onboard status LED. On Atom Lite this is usually GPIO27; change only if you are using different hardware.">
+            <input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} />
+          </Field>
           <Field label="Log Level">
             <select value={settings["cfg-log-level"]} onChange={(e) => update("cfg-log-level", (e.target as HTMLSelectElement).value)}>
               <option value="error">error</option><option value="warn">warn</option><option value="info">info</option><option value="debug">debug</option><option value="verbose">verbose</option>
             </select>
           </Field>
-          <Field label="On Polling (ms)">
-            <input type="number" min={1000} step={1000} value={settings["cfg-poll-active"]} title="How often to query CN105 while the AC is on. Lower = faster sync, more traffic." onInput={(e) => update("cfg-poll-active", (e.target as HTMLInputElement).value)} />
+          <Field label="On Polling (ms)" help="How often Kiri queries CN105 while the AC is on. Lower values update HomeKit/Web UI faster, but create more CN105 traffic.">
+            <input type="number" min={1000} step={1000} value={settings["cfg-poll-active"]} onInput={(e) => update("cfg-poll-active", (e.target as HTMLInputElement).value)} />
           </Field>
-          <Field label="Off Polling (ms)">
-            <input type="number" min={5000} step={1000} value={settings["cfg-poll-off"]} title="How often to query CN105 while the AC is off. Usually longer to avoid noise." onInput={(e) => update("cfg-poll-off", (e.target as HTMLInputElement).value)} />
+          <Field label="Off Polling (ms)" help="How often Kiri queries CN105 while the AC is off. Usually this can be slower because the indoor unit state changes less often.">
+            <input type="number" min={5000} step={1000} value={settings["cfg-poll-off"]} onInput={(e) => update("cfg-poll-off", (e.target as HTMLInputElement).value)} />
           </Field>
           <Field label="CN105 Mode">
             <select value={settings["cfg-cn105-mode"]} onChange={(e) => update("cfg-cn105-mode", (e.target as HTMLSelectElement).value)}>

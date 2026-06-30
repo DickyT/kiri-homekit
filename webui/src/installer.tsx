@@ -315,14 +315,20 @@ function InstallerApp(): JSX.Element {
             <Field label="HomeKit Manufacturer"><input type="text" value={form.hk_mfr} onInput={(e) => update("hk_mfr", (e.target as HTMLInputElement).value)} /></Field>
             <Field label="HomeKit Model"><input type="text" value={form.hk_model} onInput={(e) => update("hk_model", (e.target as HTMLInputElement).value)} /></Field>
             <Field label="HomeKit Serial"><input type="text" value={form.hk_serial} onInput={(e) => update("hk_serial", (e.target as HTMLInputElement).value)} /></Field>
-            <Field label="Status LED GPIO"><input type="number" value={form.led_pin} onInput={(e) => update("led_pin", (e.target as HTMLInputElement).value)} /></Field>
+            <Field label="Status LED GPIO" help="GPIO pin used for the onboard status LED. Atom Lite normally uses GPIO27; Atom S3 Lite uses its board-specific default.">
+              <input type="number" value={form.led_pin} onInput={(e) => update("led_pin", (e.target as HTMLInputElement).value)} />
+            </Field>
             <Field label="Log Level">
               <select value={form.log_level} onChange={(e) => update("log_level", (e.target as HTMLSelectElement).value)}>
                 <option value="error">Error</option><option value="warn">Warn</option><option value="info">Info</option><option value="debug">Debug</option><option value="verbose">Verbose</option>
               </select>
             </Field>
-            <Field label="On Polling (ms)"><input type="number" min={1000} step={1000} value={form.poll_on} title="How often production firmware queries CN105 while the AC is on. Lower = faster sync, more traffic." onInput={(e) => update("poll_on", (e.target as HTMLInputElement).value)} /></Field>
-            <Field label="Off Polling (ms)"><input type="number" min={5000} step={1000} value={form.poll_off} title="How often production firmware queries CN105 while the AC is off. Usually longer to avoid noise." onInput={(e) => update("poll_off", (e.target as HTMLInputElement).value)} /></Field>
+            <Field label="On Polling (ms)" help="How often production firmware queries CN105 while the AC is on. Lower values sync faster, but create more CN105 traffic.">
+              <input type="number" min={1000} step={1000} value={form.poll_on} onInput={(e) => update("poll_on", (e.target as HTMLInputElement).value)} />
+            </Field>
+            <Field label="Off Polling (ms)" help="How often production firmware queries CN105 while the AC is off. Usually this can be slower because the indoor unit state changes less often.">
+              <input type="number" min={5000} step={1000} value={form.poll_off} onInput={(e) => update("poll_off", (e.target as HTMLInputElement).value)} />
+            </Field>
             <Field label="CN105 Mode">
               <select value={form.use_real} onChange={(e) => update("use_real", (e.target as HTMLSelectElement).value)}>
                 <option value="1">Real CN105</option><option value="0">Mock</option>
@@ -434,10 +440,13 @@ function Step({ n, title, hint, locked, id, children }: {
   );
 }
 
-function Field({ label, children }: { label: string; children: ComponentChildren }): JSX.Element {
+function Field({ label, help, children }: { label: string; help?: string; children: ComponentChildren }): JSX.Element {
   return (
     <label class="field">
-      <span class="field-label">{label}</span>
+      <span class="field-label">
+        {label}
+        {help && <span class="info-icon" title={help} aria-label={help} tabindex={0}>i</span>}
+      </span>
       {children}
     </label>
   );

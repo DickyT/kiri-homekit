@@ -239,13 +239,41 @@ h3 {
 }
 
 .field-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: .16em;
   text-transform: uppercase;
   color: var(--ink-dim);
   margin-bottom: 8px
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #68b7ff;
+  border-radius: 999px;
+  color: #9bcfff;
+  background: rgba(104, 183, 255, .06);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: help
+}
+
+.info-icon:hover,
+.info-icon:focus {
+  color: #d7ecff;
+  border-color: #9bcfff;
+  outline: none
 }
 
 .field-hint {

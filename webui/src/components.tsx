@@ -28,10 +28,13 @@ export function SpecRow({ k, children, valueClass }: { k: string; children: Comp
   );
 }
 
-export function Field({ label, children }: { label: string; children: ComponentChildren }): JSX.Element {
+export function Field({ label, help, children }: { label: string; help?: string; children: ComponentChildren }): JSX.Element {
   return (
     <label class="field">
-      <span class="field-label">{label}</span>
+      <span class="field-label">
+        {label}
+        {help && <span class="info-icon" title={help} aria-label={help} tabindex={0}>i</span>}
+      </span>
       {children}
     </label>
   );
