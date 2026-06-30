@@ -8,6 +8,7 @@ It is local-first, browser-provisioned, and designed to be recoverable without
 command line tools.
 
 - Website: <https://kiri.dkt.moe>
+- Features: <https://kiri.dkt.moe/features.html>
 - Wiki and setup guides: <https://kiri.dkt.moe/wiki.html>
 - WiFi setup: <https://kiri.dkt.moe/ble_provisioning.html>
 - Firmware recovery: <https://kiri.dkt.moe/flash.html>
@@ -16,19 +17,26 @@ command line tools.
 
 ## What It Does
 
-- Controls supported Mitsubishi heat pumps through the CN105 connector.
-- Exposes the heat pump to Apple HomeKit.
-- Provides a local WebUI at `http://<device-ip>:8080/`.
-- Supports browser-based BLE WiFi provisioning.
-- Supports browser-based firmware recovery with `.kiri` packages.
-- Runs locally without a required cloud service.
+- Full CN105 control for power, mode, temperature, fan, and supported airflow
+  axes.
+- Native local HomeKit without Home Assistant, Homebridge, or a cloud service.
+- Physical-remote state synchronization and confirmed CN105 commands.
+- Configurable single/separate HomeKit airflow presentation, supported modes,
+  tilt services, and independent Swing switches.
+- Responsive local WebUI at `http://<device-ip>:8080/` with diagnostics and
+  persistent logs.
+- Guided WiFi setup, validated `.kiri` OTA, and browser-based USB recovery.
+- Atom Lite and AtomS3 Lite hardware support.
+
+See [FEATURES.md](./FEATURES.md) for the complete feature guide, including the
+advanced HomeKit airflow mappings and upcoming on-device Lua automation.
 
 ## Hardware Kit
 
 The intended user path assumes a prebuilt Kiri Bridge kit:
 
 - M5Stack ATOM Lite or AtomS3 Lite controller
-- two CN105 cable options
+- one CN105 cable
 - pre-flashed Kiri Bridge installer or firmware
 - browser-based setup and recovery flow
 
@@ -40,6 +48,7 @@ modal with a contact email.
 If you bought a Kiri Bridge, start with the website:
 
 - Website: <https://kiri.dkt.moe>
+- Product features: <https://kiri.dkt.moe/features.html>
 - Setup and recovery wiki: <https://kiri.dkt.moe/wiki.html>
 - WiFi setup tool: <https://kiri.dkt.moe/ble_provisioning.html>
 - USB recovery flasher: <https://kiri.dkt.moe/flash.html>

@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Features — Kiri Bridge</title>
+<meta name="description" content="Explore Kiri Bridge features: complete Mitsubishi CN105 control, native Apple Home, local WebUI, safe OTA, browser recovery, diagnostics, and Atom Lite or AtomS3 Lite support.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://kiri.dkt.moe/features.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kiri Bridge">
+<meta property="og:title" content="Kiri Bridge Features">
+<meta property="og:description" content="More than a thermostat: complete CN105 control, native HomeKit, reliable state sync, local setup, OTA, recovery, and diagnostics.">
+<meta property="og:url" content="https://kiri.dkt.moe/features.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Kiri Bridge<span class="brand-page">features</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html">home</a>
+      <a href="wiki.html">wiki</a>
+      <a href="flash.html">recovery</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="feature-hero">
+    <div class="shell">
+      <div class="feature-eyebrow">Built for the whole indoor unit</div>
+      <h1>More than a<br><span class="accent">thermostat</span>.</h1>
+      <p class="lede">Kiri Bridge controls Mitsubishi heat pumps directly over CN105, keeps Apple Home synchronized with the physical unit, and carries its own setup, update, diagnostic, and recovery tools.</p>
+      <div class="feature-jump" aria-label="Feature sections">
+        <a href="#control">control</a>
+        <a href="#homekit">homekit</a>
+        <a href="#webui">webui</a>
+        <a href="#setup">setup</a>
+        <a href="#recovery">recovery</a>
+        <a href="#diagnostics">diagnostics</a>
+        <a href="#hardware">hardware</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="control">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">01</div>
+        <h2>Complete CN105 control</h2>
+        <p>Power, operating mode, target temperature, fan speed, fixed airflow positions, and Swing — all through the indoor unit's own CN105 connection.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Climate and fan</span><small>power · auto · heat · cool · temperature · fan</small></summary>
+          <div class="feature-detail-body">
+            <p>Read room temperature, set the target, choose supported operating modes, and select Auto, Quiet, or discrete fan levels. Cool-only and heat-only units can advertise only the modes they actually support.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Up/down airflow</span><small>horizontal flap</small></summary>
+          <div class="feature-detail-body">
+            <p>Control the horizontal flap that directs air toward the ceiling or floor. Fixed positions, Auto, and Swing are exposed when supported by the indoor unit.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Left/right airflow</span><small>vertical vanes</small></summary>
+          <div class="feature-detail-body">
+            <p>Control motorized vertical vanes independently. Units with manual vanes can disable this capability, which removes the WebUI control and prevents incompatible HomeKit services from being created.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="sync">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">02</div>
+        <h2>State that stays in sync</h2>
+        <p>The indoor unit is the source of truth. Kiri does not assume a command worked, and it does not forget that someone may still use the Mitsubishi remote.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Physical remote synchronization</span><small>full CN105 polling</small></summary>
+          <div class="feature-detail-body">
+            <p>Kiri polls the complete CN105 state groups. Changes made from the original remote — including power, mode, temperature, fan, and airflow — flow back into Apple Home and the WebUI.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Confirmed commands</span><small>query after set</small></summary>
+          <div class="feature-detail-body">
+            <p>After a WebUI command, Kiri immediately queries the indoor unit and retries briefly until the requested value is reported. Controls stay busy during confirmation; failures show an error and restore the previous displayed value.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Only changed fields are sent</span><small>safer across different models</small></summary>
+          <div class="feature-detail-body">
+            <p>Changing temperature does not resend untouched fan, mode, or vane fields. An unsupported left/right vane cannot accidentally block an otherwise valid power or temperature command.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="homekit">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">03</div>
+        <h2>Native Apple Home</h2>
+        <p>The ESP32 speaks HomeKit directly. No Home Assistant, Homebridge, cloud account, subscription, or always-on bridge server is required.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Climate controls</span><small>local HomeKit accessory</small></summary>
+          <div class="feature-detail-body">
+            <p>Power, current state, target mode, current and target temperature, fan speed, and Swing are mapped to the indoor unit. Pair with the QR or manual setup code shown in Kiri's local Admin page.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Single or separate airflow tile</span><small>your preferred Home layout</small></summary>
+          <div class="feature-detail-body">
+            <p>Separate Airflow is the default: fan speed and Swing live on a dedicated service that is easier to automate and avoids duplicate Eve characteristics. AC power and Fan Active remain synchronized. Users who prefer the legacy grouped layout can switch back to a single AC tile.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>AC Capabilities</span><small>hide what the unit cannot do</small></summary>
+          <div class="feature-detail-body">
+            <p>Tell Kiri whether the unit supports Auto, Heat, Cool, up/down airflow, and motorized left/right airflow. The selection controls both the local WebUI and which HomeKit modes and advanced services are advertised.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Advanced airflow mapping</span><small>tilt and swing by axis</small></summary>
+          <div class="feature-detail-body">
+            <p>Optionally expose up/down and left/right fixed positions as separately named Window Covering-style services, plus dedicated Swing switches for either axis. Legacy Swing continues to control any axis that has not received its own switch; when both switches exist, the combined control is removed to avoid duplication.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="webui">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">04</div>
+        <h2>Local WebUI</h2>
+        <p>Every production device hosts a responsive controller at <span class="mono">http://&lt;device-ip&gt;:8080/</span>. Nothing leaves the local network.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Responsive controller</span><small>desktop and mobile</small></summary>
+          <div class="feature-detail-body">
+            <p>Control the complete indoor unit, review live status, pair HomeKit, and configure the device from a phone or computer. Pending requests lock relevant controls and server errors remain visible.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Focus-aware live refresh</span><small>5 seconds · 15 seconds · off</small></summary>
+          <div class="feature-detail-body">
+            <p>Initial load always fetches state immediately. Periodic refresh pauses when the page is hidden or unfocused, catches up when the user returns, and avoids overwriting a control currently being edited or submitted.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Device administration</span><small>identity · HomeKit · CN105 · maintenance</small></summary>
+          <div class="feature-detail-body">
+            <p>Configure device identity, WiFi, HomeKit presentation, AC capabilities, polling, logs, LED GPIO, and expert UART settings. Hardware board and firmware version are clearly identified throughout the UI.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="setup">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">05</div>
+        <h2>Guided setup</h2>
+        <p>The normal buyer flow is browser-driven and assumes a preassembled kit. No command line or source build is required.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>WiFi hotspot setup</span><small>recommended</small></summary>
+          <div class="feature-detail-body">
+            <p>Connect to the installer's <span class="mono">PROV_KIRI_XX</span> hotspot and open <span class="mono">192.168.4.1:8080</span>. From one guided flow, configure WiFi, probe CN105, verify safe settings, and upload production firmware.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>BLE provisioning</span><small>optional fallback</small></summary>
+          <div class="feature-detail-body">
+            <p>Use desktop Chrome through Kiri's public provisioning page, or Espressif's mobile app. Production firmware can reopen a temporary BLE provisioning window after a long press of the hardware button.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Installer remains reachable</span><small>designed for recovery</small></summary>
+          <div class="feature-detail-body">
+            <p>The installer keeps its SoftAP and BLE provisioning paths available after an attempt, making it possible to replace credentials or retry an install without first recovering over USB.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="recovery">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">06</div>
+        <h2>Safe updates and recovery</h2>
+        <p>Board-specific <span class="mono">.kiri</span> packages carry the metadata needed to reject the wrong firmware before it reaches flash.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Validated firmware packages</span><small>board · variant · project · size · hash</small></summary>
+          <div class="feature-detail-body">
+            <p>The browser inspects package metadata before upload, and the ESP32 validates the OTA image again before selecting it. Atom Lite, AtomS3 Lite, installer, and production packages are explicitly identified.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Local OTA</span><small>review before reboot</small></summary>
+          <div class="feature-detail-body">
+            <p>Upload from the Admin page, review version, variant, destination partition, and warnings, then explicitly confirm the reboot. Installer and production firmware share the same validation and confirmation component.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Browser USB flasher</span><small>guided WebSerial recovery</small></summary>
+          <div class="feature-detail-body">
+            <p>The flasher verifies the ESP32 bootloader, shows chip and MAC details, previews every flash region, reports actual write progress, and releases the serial port on success. The final step asks for a manual restart to avoid unstable automatic reset behavior seen in some macOS Chrome versions.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="diagnostics">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">07</div>
+        <h2>Diagnostics built in</h2>
+        <p>Support tools live on the controller, so intermittent problems can be investigated without shipping every unit back or attaching a debugger.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Persistent logs</span><small>live tail · download · history</small></summary>
+          <div class="feature-detail-body">
+            <p>Asynchronous SPIFFS-backed logs preserve useful boot and CN105 history without blocking control. View, tail, download, and clear logs directly from the WebUI.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>CN105 link health</span><small>packets · errors · polls · pending sets</small></summary>
+          <div class="feature-detail-body">
+            <p>Inspect connection phase, attempts, polling cycles, RX and TX packets, RX errors, pending SET requests, and the latest transport error.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Maintenance tools</span><small>reboot · reset · LED · expert configuration</small></summary>
+          <div class="feature-detail-body">
+            <p>Reboot the controller, reset WiFi or HomeKit, clear logs, choose a log level, test the status LED, tune polling, and access clearly marked expert UART and NVS tools when support requires them.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section" id="hardware">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">08</div>
+        <h2>Two supported boards</h2>
+        <p>One codebase supports M5Stack Atom Lite and AtomS3 Lite with board-aware pins, metadata, setup behavior, and release packages.</p>
+      </header>
+      <div class="feature-specs">
+        <div><span>Atom Lite</span><strong>ESP32-PICO-D4</strong></div>
+        <div><span>AtomS3 Lite</span><strong>ESP32-S3</strong></div>
+        <div><span>Release build</span><strong>Production + installer for both boards</strong></div>
+        <div><span>Hardware kit</span><strong>Pre-flashed controller + one CN105 cable</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-section feature-coming" id="automation">
+    <div class="shell feature-layout">
+      <header class="feature-intro">
+        <div class="feature-number">09</div>
+        <div class="feature-status">Coming soon</div>
+        <h2>On-device Lua automation</h2>
+        <p>Small local rules that react to the indoor unit without depending on Apple Home automations or another always-on server.</p>
+      </header>
+      <div class="feature-list">
+        <details class="feature-detail" open>
+          <summary><span>Engine under development</span><small>not yet a supported user feature</small></summary>
+          <div class="feature-detail-body">
+            <p>The constrained Lua 5.4 engine can react to state changes and power events, read CN105 telemetry, change climate and airflow settings, retain small values in NVS, and write to the Kiri log.</p>
+            <p>Its memory and instruction budgets are bounded, and filesystem, operating-system, package, and debug libraries are removed. The engine exists in development firmware, but its UI remains hidden while the API and support experience are stabilized.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="feature-cta">
+    <div class="shell row">
+      <div>
+        <h2>Ready to set one up?</h2>
+        <p>Start with the buyer-focused setup guide, or inspect every line of the firmware on GitHub.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="wiki-new-device.html">Setup guide →</a>
+        <a class="btn" href="https://github.com/DickyT/kiri-homekit/blob/main/FEATURES.md">Technical feature guide ↗</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span><strong>Kiri Bridge</strong> — an open-source HomeKit controller for Mitsubishi heat pumps and mini splits · GPL-3.0</span>
+    </div>
+    <a class="footer-github" href="https://github.com/DickyT/kiri-homekit" aria-label="Source on GitHub">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.18.92-.26 1.91-.39 2.89-.39.98 0 1.97.13 2.89.39 2.21-1.49 3.18-1.18 3.18-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.77 1.05.77 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.67.8.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/>
+      </svg>
+    </a>
+  </div>
+</footer>
+
+</body>
+</html>
