@@ -33,7 +33,7 @@ export function Field({ label, help, children }: { label: string; help?: string;
     <label class="field">
       <span class="field-label">
         {label}
-        {help && <span class="info-icon" title={help} aria-label={help} tabindex={0}>i</span>}
+        {help && <span class="info-icon" data-tooltip={help} aria-label={help} tabIndex={0}>i</span>}
       </span>
       {children}
     </label>

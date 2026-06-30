@@ -54,6 +54,7 @@ constexpr uint8_t kDisplayFahrenheit = 1;
 constexpr float kMinTargetCelsius = 10.0f;
 constexpr float kMaxTargetCelsius = 31.0f;
 constexpr float kTargetStepCelsius = 0.5f;
+char kConfiguredNameUuid[] = "E3";
 
 bool started = false;
 int64_t last_command_us = 0;
@@ -96,6 +97,21 @@ char last_error[96] = "";
 
 char* hapString(const char* value) {
     return const_cast<char*>(value);
+}
+
+hap_char_t* hapCharConfiguredNameCreate(const char* name) {
+    return hap_char_string_create(kConfiguredNameUuid,
+                                  HAP_CHAR_PERM_PR,
+                                  hapString(name));
+}
+
+esp_err_t addServiceNames(hap_serv_t* service, const char* name) {
+    if (service == nullptr || name == nullptr || name[0] == '\0') {
+        return ESP_FAIL;
+    }
+    int ret = hap_serv_add_char(service, hap_char_name_create(hapString(name)));
+    ret |= hap_serv_add_char(service, hapCharConfiguredNameCreate(name));
+    return ret == HAP_SUCCESS ? ESP_OK : ESP_FAIL;
 }
 
 bool equals(const char* left, const char* right) {
@@ -744,10 +760,9 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
 
     std::snprintf(service_name,
                   96,
-                  "%s %s Tilt",
-                  device_settings::deviceName(),
+                  "%s Airflow Tilt",
                   up_down ? "Up/Down" : "Left/Right");
-    int ret = hap_serv_add_char(service, hap_char_name_create(hapString(service_name)));
+    int ret = addServiceNames(service, service_name);
     if (up_down) {
         const int target_tilt = horizontalTiltFromVane(state.vane);
         const int current_tilt = equals(state.power, "OFF") ? -90 : target_tilt;
@@ -800,10 +815,9 @@ esp_err_t addSwingSwitchService(hap_acc_t* target_accessory, bool up_down) {
 
     std::snprintf(service_name,
                   96,
-                  "%s %s Swing",
-                  device_settings::deviceName(),
+                  "%s Airflow Swing",
                   up_down ? "Up/Down" : "Left/Right");
-    if (hap_serv_add_char(service, hap_char_name_create(hapString(service_name))) != HAP_SUCCESS) {
+    if (addServiceNames(service, service_name) != ESP_OK) {
         setLastError("failed to add Swing switch name");
         return ESP_FAIL;
     }

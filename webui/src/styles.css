@@ -251,6 +251,7 @@ h3 {
 }
 
 .info-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -269,11 +270,65 @@ h3 {
   cursor: help
 }
 
+.info-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 76vw);
+  padding: 9px 10px;
+  border: 1px solid rgba(104, 183, 255, .48);
+  background: #07111a;
+  color: #d7ecff;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity .08s ease, transform .08s ease
+}
+
+.info-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  z-index: 41;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid rgba(104, 183, 255, .48);
+  border-bottom: 1px solid rgba(104, 183, 255, .48);
+  background: #07111a;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) rotate(45deg);
+  transition: opacity .08s ease
+}
+
 .info-icon:hover,
 .info-icon:focus {
   color: #d7ecff;
   border-color: #9bcfff;
   outline: none
+}
+
+.info-icon:hover::after,
+.info-icon:focus::after {
+  opacity: 1;
+  transform: translate(-50%, 0)
+}
+
+.info-icon:hover::before,
+.info-icon:focus::before {
+  opacity: 1
 }
 
 .field-hint {
