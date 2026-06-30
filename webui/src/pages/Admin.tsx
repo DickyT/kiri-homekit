@@ -87,10 +87,10 @@ const HK_MAP_LEFT_RIGHT_SWING = 1 << 3;
 const HK_MAP_KNOWN_MASK = HK_MAP_UP_DOWN_TILT | HK_MAP_LEFT_RIGHT_TILT | HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING;
 
 const HOMEKIT_MAPPING_OPTIONS = [
-  { bit: HK_MAP_UP_DOWN_TILT, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the horizontal flap's fixed up/down position." },
-  { bit: HK_MAP_LEFT_RIGHT_TILT, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the vertical vanes' fixed left/right position." },
-  { bit: HK_MAP_UP_DOWN_SWING, label: "Up/Down Swing Tile", detail: "Adds a HomeKit switch dedicated to horizontal flap oscillation." },
-  { bit: HK_MAP_LEFT_RIGHT_SWING, label: "Left/Right Swing Tile", detail: "Adds a HomeKit switch dedicated to vertical vane oscillation." },
+  { bit: HK_MAP_UP_DOWN_TILT, capability: AC_CAP_UP_DOWN_AIRFLOW, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the horizontal flap's fixed up/down position." },
+  { bit: HK_MAP_LEFT_RIGHT_TILT, capability: AC_CAP_LEFT_RIGHT_AIRFLOW, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the vertical vanes' fixed left/right position." },
+  { bit: HK_MAP_UP_DOWN_SWING, capability: AC_CAP_UP_DOWN_AIRFLOW, label: "Up/Down Swing Tile", detail: "Adds a HomeKit switch dedicated to horizontal flap oscillation." },
+  { bit: HK_MAP_LEFT_RIGHT_SWING, capability: AC_CAP_LEFT_RIGHT_AIRFLOW, label: "Left/Right Swing Tile", detail: "Adds a HomeKit switch dedicated to vertical vane oscillation." },
 ] as const;
 
 type SettingsForm = Record<string, string>;
@@ -355,6 +355,13 @@ export function AdminPage(): JSX.Element {
   const otaInputRef = useRef<HTMLInputElement>(null);
   const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
   const currentHomeKitMapping = normalizeHomeKitMapping(settings["cfg-homekit-advanced-mapping"]);
+  let effectiveHomeKitMapping = 0;
+  if ((currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0) {
+    effectiveHomeKitMapping |= currentHomeKitMapping & (HK_MAP_UP_DOWN_TILT | HK_MAP_UP_DOWN_SWING);
+  }
+  if ((currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0) {
+    effectiveHomeKitMapping |= currentHomeKitMapping & (HK_MAP_LEFT_RIGHT_TILT | HK_MAP_LEFT_RIGHT_SWING);
+  }
   const separateHomeKitDisplay = (settings["cfg-homekit-separate-airflow-tile"] ?? "1") === "1";
   const homeKitPresentationChanged =
     (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
@@ -999,26 +1006,30 @@ export function AdminPage(): JSX.Element {
           Adding or removing these services may require removing and re-adding Kiri Bridge in Apple Home after Save and Reboot. Do not use Reset HomeKit inside Kiri Bridge.
         </div>
         <div class="grid2" style={{ marginTop: "14px" }}>
-          {HOMEKIT_MAPPING_OPTIONS.map((option) => (
-            <Field key={option.bit} label={option.label}>
-              <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", minHeight: "58px" }}>
-                <input
-                  type="checkbox"
-                  checked={(currentHomeKitMapping & option.bit) !== 0}
-                  onChange={() => toggleHomeKitMapping(option.bit)}
-                />
-                <span>{option.detail}</span>
-              </label>
-            </Field>
-          ))}
+          {HOMEKIT_MAPPING_OPTIONS.map((option) => {
+            const supported = (currentAcCapabilities & option.capability) !== 0;
+            return (
+              <Field key={option.bit} label={option.label}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", minHeight: "58px", opacity: supported ? 1 : 0.55 }}>
+                  <input
+                    type="checkbox"
+                    checked={(currentHomeKitMapping & option.bit) !== 0}
+                    disabled={!supported}
+                    onChange={() => toggleHomeKitMapping(option.bit)}
+                  />
+                  <span>{option.detail}{supported ? "" : " Disabled by AC Capabilities."}</span>
+                </label>
+              </Field>
+            );
+          })}
         </div>
         <div class="info-banner" style={{ marginTop: "18px" }}>
           <strong>Original Swing control</strong>
-          {(currentHomeKitMapping & (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)) === (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)
+          {(effectiveHomeKitMapping & (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)) === (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)
             ? "Both dedicated Swing switches are enabled, so the original Swing control is removed from the AC/Airflow service."
-            : (currentHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
+            : (effectiveHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
               ? "The original Swing control remains visible, but it controls only Left/Right Swing when that airflow axis is supported. Up/Down Swing belongs exclusively to its dedicated switch."
-              : (currentHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
+              : (effectiveHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
                 ? "The original Swing control remains visible, but it controls only Up/Down Swing when that airflow axis is supported. Left/Right Swing belongs exclusively to its dedicated switch."
                 : "No dedicated Swing switches are enabled. The original Swing control continues to operate every supported airflow axis."}
         </div>

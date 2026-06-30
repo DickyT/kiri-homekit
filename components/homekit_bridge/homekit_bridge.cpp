@@ -295,10 +295,32 @@ bool legacySwingControlsLeftRight() {
            (!device_settings::homeKitSeparateAirflowTile() || !device_settings::homeKitMapsLeftRightSwing());
 }
 
-bool hideLegacySwing() {
+bool mapsUpDownTilt() {
     return device_settings::homeKitSeparateAirflowTile() &&
-           device_settings::homeKitMapsUpDownSwing() &&
+           device_settings::supportsUpDownAirflow() &&
+           device_settings::homeKitMapsUpDownTilt();
+}
+
+bool mapsLeftRightTilt() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::supportsLeftRightAirflow() &&
+           device_settings::homeKitMapsLeftRightTilt();
+}
+
+bool mapsUpDownSwing() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::supportsUpDownAirflow() &&
+           device_settings::homeKitMapsUpDownSwing();
+}
+
+bool mapsLeftRightSwing() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::supportsLeftRightAirflow() &&
            device_settings::homeKitMapsLeftRightSwing();
+}
+
+bool hideLegacySwing() {
+    return mapsUpDownSwing() && mapsLeftRightSwing();
 }
 
 uint8_t swingFromMock(const cn105_core::MockState& state) {
@@ -910,25 +932,25 @@ esp_err_t start() {
         if (fan_err != ESP_OK) {
             return fan_err;
         }
-        if (device_settings::homeKitMapsUpDownTilt() && device_settings::supportsUpDownAirflow()) {
+        if (mapsUpDownTilt()) {
             const esp_err_t mapping_err = addTiltService(accessory, true);
             if (mapping_err != ESP_OK) {
                 return mapping_err;
             }
         }
-        if (device_settings::homeKitMapsLeftRightTilt() && device_settings::supportsLeftRightAirflow()) {
+        if (mapsLeftRightTilt()) {
             const esp_err_t mapping_err = addTiltService(accessory, false);
             if (mapping_err != ESP_OK) {
                 return mapping_err;
             }
         }
-        if (device_settings::homeKitMapsUpDownSwing() && device_settings::supportsUpDownAirflow()) {
+        if (mapsUpDownSwing()) {
             const esp_err_t mapping_err = addSwingSwitchService(accessory, true);
             if (mapping_err != ESP_OK) {
                 return mapping_err;
             }
         }
-        if (device_settings::homeKitMapsLeftRightSwing() && device_settings::supportsLeftRightAirflow()) {
+        if (mapsLeftRightSwing()) {
             const esp_err_t mapping_err = addSwingSwitchService(accessory, false);
             if (mapping_err != ESP_OK) {
                 return mapping_err;

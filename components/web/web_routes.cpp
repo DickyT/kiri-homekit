@@ -920,7 +920,10 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
     char wide_vane[32] = {};
     if (web_http::queryValue(query, "wide_vane", wide_vane, sizeof(wide_vane))) {
         if (!device_settings::supportsLeftRightAirflow()) {
-            return web_http::sendJsonError(req, "left/right airflow is disabled in AC capabilities");
+            return web_http::sendJsonError(
+                req,
+                "Left/Right Airflow is disabled in Settings > AC Capabilities. "
+                "If your indoor unit does not support left/right vane control, leave it disabled.");
         }
         command.hasWideVane = true;
         command.wideVane = wide_vane;

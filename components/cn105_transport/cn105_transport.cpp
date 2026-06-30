@@ -183,6 +183,17 @@ bool reportMismatch(char* message,
     return false;
 }
 
+bool reportWideVaneMismatch(char* message, size_t message_len, const char* requested, const char* actual) {
+    if (message != nullptr && message_len > 0) {
+        std::snprintf(message,
+                      message_len,
+                      "Left/right airflow not confirmed (%s -> %s). Disable it in AC Capabilities if unsupported.",
+                      requested != nullptr ? requested : "",
+                      actual != nullptr ? actual : "");
+    }
+    return false;
+}
+
 bool reportMismatch(char* message, size_t message_len, const char* field, int requested, int actual) {
     if (message != nullptr && message_len > 0) {
         std::snprintf(message, message_len, "CN105 mismatch: %s requested=%d actual=%d", field, requested, actual);
@@ -208,7 +219,7 @@ bool commandMatchesState(const cn105_core::SetCommand& command, char* mismatch, 
         return reportMismatch(mismatch, mismatch_len, "vane", command.vane, state.vane);
     }
     if (command.hasWideVane && command.wideVane != nullptr && std::strcmp(state.wideVane, command.wideVane) != 0) {
-        return reportMismatch(mismatch, mismatch_len, "wide_vane", command.wideVane, state.wideVane);
+        return reportWideVaneMismatch(mismatch, mismatch_len, command.wideVane, state.wideVane);
     }
     return true;
 }
