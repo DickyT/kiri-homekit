@@ -21,6 +21,9 @@ type FormState = {
 };
 
 const FORM_DEFAULT: FormState = { power: "OFF", mode: "AUTO", temp: "77", fan: "AUTO", vane: "AUTO", wide: "|" };
+const AC_CAP_DEFAULT = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
+const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
+const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 4;
 
 function fromMock(m: Cn105MockState): FormState {
   return {
@@ -84,8 +87,8 @@ export function ControlPage(): JSX.Element {
       params.set("mode", form.mode);
       params.set("temperature_f", form.temp);
       params.set("fan", form.fan);
-      params.set("vane", form.vane);
-      params.set("wide_vane", form.wide);
+      if (supportsUpDownAirflow) params.set("vane", form.vane);
+      if (supportsLeftRightAirflow) params.set("wide_vane", form.wide);
       const j = await api.buildSet(params);
       if (j.ok) {
         setDraftLocked(false);
@@ -115,6 +118,9 @@ export function ControlPage(): JSX.Element {
 
   const s = status.value;
   const m = s?.cn105.mock_state;
+  const acCapabilities = s?.config?.ac_capabilities ?? AC_CAP_DEFAULT;
+  const supportsUpDownAirflow = (acCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0;
+  const supportsLeftRightAirflow = (acCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0;
   const wifiText = s?.wifi.connected
     ? `${s.wifi.ip ?? "--"} · ${s.wifi.rssi ?? "--"} dBm`
     : "Disconnected";
@@ -162,7 +168,7 @@ export function ControlPage(): JSX.Element {
             </select>
           </Field>
         </div>
-        <div class="row3">
+        <div class={supportsUpDownAirflow ? "row3" : "row"}>
           <Field label="Temperature °F">
             <input type="number" min="50" max="88" step="1" value={form.temp} disabled={busy} onInput={(e) => update("temp", (e.target as HTMLInputElement).value)} />
           </Field>
@@ -171,23 +177,27 @@ export function ControlPage(): JSX.Element {
               <option>AUTO</option><option>QUIET</option><option>1</option><option>2</option><option>3</option><option>4</option>
             </select>
           </Field>
-          <Field label="Up/Down Airflow (Horizontal Flap)">
-            <select value={form.vane} disabled={busy} onChange={(e) => update("vane", (e.target as HTMLSelectElement).value)}>
-              <option>AUTO</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>SWING</option>
+          {supportsUpDownAirflow && (
+            <Field label="Up/Down Airflow (Horizontal Flap)">
+              <select value={form.vane} disabled={busy} onChange={(e) => update("vane", (e.target as HTMLSelectElement).value)}>
+                <option>AUTO</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>SWING</option>
+              </select>
+            </Field>
+          )}
+        </div>
+        {supportsLeftRightAirflow && (
+          <Field label="Left/Right Airflow (Vertical Vanes)">
+            <select value={form.wide} disabled={busy} onChange={(e) => update("wide", (e.target as HTMLSelectElement).value)}>
+              <option value="|">Center</option>
+              <option value="<<">Far Left</option>
+              <option value="<">Left</option>
+              <option value=">">Right</option>
+              <option value=">>">Far Right</option>
+              <option value="<>">Wide</option>
+              <option value="SWING">SWING</option>
             </select>
           </Field>
-        </div>
-        <Field label="Left/Right Airflow (Vertical Vanes)">
-          <select value={form.wide} disabled={busy} onChange={(e) => update("wide", (e.target as HTMLSelectElement).value)}>
-            <option value="|">Center</option>
-            <option value="<<">Far Left</option>
-            <option value="<">Left</option>
-            <option value=">">Right</option>
-            <option value=">>">Far Right</option>
-            <option value="<>">Wide</option>
-            <option value="SWING">SWING</option>
-          </select>
-        </Field>
+        )}
         <div class="btns">
           <Btn variant="primary" disabled={busy} onClick={send}>Send</Btn>
           <Btn disabled={busy} onClick={() => refresh(true)}>Refresh</Btn>

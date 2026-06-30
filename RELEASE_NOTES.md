@@ -17,7 +17,8 @@ This release focuses on board support, setup reliability, and HomeKit presentati
 - Added optional HomeKit airflow exposure through a separate Fan/Airflow service. This lets Apple Home users choose whether the AC appears as combined or separate tiles.
 - Added a `HomeKit Display` setting in the Admin UI. The default is now `Separate airflow tile`; selecting `Single AC tile` restores the older grouped behavior and applies after reboot.
 - In separate airflow mode, fan speed and swing controls are exposed only on the Fan/Airflow service to avoid duplicate Rotation Speed and Swing Mode controls in apps such as Eve. The main Heater Cooler service still keeps its own Active control.
-- Added a `Supported HVAC Modes` HomeKit setting for selecting advertised Target Heater Cooler State values (`0` Auto, `1` Heat, `2` Cool). The default remains Auto + Heat + Cool when no NVS value exists.
+- Added an `AC Capabilities` setting that combines HomeKit Target Heater Cooler State support (`0` Auto, `1` Heat, `2` Cool) with optional Web UI airflow controls. Units with manual vertical vanes can hide left/right airflow controls.
+- Migrated the legacy `hk_hvac` NVS value into the new `ac_caps` bitmask automatically, then removes the old key after migration.
 
 ### Automation
 

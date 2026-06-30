@@ -251,7 +251,9 @@ const char* percentToFan(float percent) {
 }
 
 uint8_t swingFromMock(const cn105_core::MockState& state) {
-    return equals(state.vane, "SWING") || equals(state.wideVane, "SWING") ? kSwingEnabled : kSwingDisabled;
+    const bool up_down_swing = device_settings::supportsUpDownAirflow() && equals(state.vane, "SWING");
+    const bool left_right_swing = device_settings::supportsLeftRightAirflow() && equals(state.wideVane, "SWING");
+    return up_down_swing || left_right_swing ? kSwingEnabled : kSwingDisabled;
 }
 
 void setLastEvent(const char* value) {
@@ -346,14 +348,27 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         return true;
     }
     if (character == swing_mode_char || character == fan_swing_mode_char) {
-        command->hasVane = true;
-        command->hasWideVane = true;
+        const bool supports_up_down = device_settings::supportsUpDownAirflow();
+        const bool supports_left_right = device_settings::supportsLeftRightAirflow();
+        if (!supports_up_down && !supports_left_right) {
+            return false;
+        }
+        command->hasVane = supports_up_down;
+        command->hasWideVane = supports_left_right;
         if (value.u == kSwingEnabled) {
-            command->vane = "SWING";
-            command->wideVane = "SWING";
+            if (supports_up_down) {
+                command->vane = "SWING";
+            }
+            if (supports_left_right) {
+                command->wideVane = "SWING";
+            }
         } else {
-            command->vane = "AUTO";
-            command->wideVane = "|";
+            if (supports_up_down) {
+                command->vane = "AUTO";
+            }
+            if (supports_left_right) {
+                command->wideVane = "|";
+            }
         }
         return true;
     }

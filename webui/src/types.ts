@@ -70,6 +70,7 @@ export type DeviceConfig = {
   homekit_model?: string;
   homekit_serial?: string;
   homekit_separate_airflow_tile?: boolean;
+  ac_capabilities?: number;
   homekit_hvac_modes?: string;
   led_pin?: number;
   cn105_mode?: "real" | "mock";

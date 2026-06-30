@@ -34,7 +34,7 @@ constexpr char kDefaultHomeKitModel[] = "Kiri Bridge";
 constexpr char kDefaultHomeKitSerial[] = "KIRI-BRIDGE";
 constexpr char kDefaultHomeKitSetupId[] = "DKT1";
 constexpr bool kDefaultHomeKitSeparateAirflowTile = true;
-constexpr uint8_t kDefaultHomeKitTargetModeMask = device_settings::kHomeKitTargetAllMask;
+constexpr uint32_t kDefaultAcCapabilities = device_settings::kAcCapabilityDefault;
 constexpr bool kDefaultUseRealCn105 = true;
 constexpr int kDefaultStatusLedPin = board_profile::kDefaultStatusLedPin;
 constexpr int kDefaultCn105RxPin = board_profile::kDefaultCn105RxPin;
@@ -121,7 +121,9 @@ void formatHomeKitTargetModeMask(uint8_t mask, char* out, size_t out_len) {
 }
 
 void refreshHomeKitTargetModeName() {
-    formatHomeKitTargetModeMask(settings.homeKitTargetModeMask, homekit_target_mode_name, sizeof(homekit_target_mode_name));
+    formatHomeKitTargetModeMask(static_cast<uint8_t>(settings.acCapabilities & device_settings::kAcCapabilityTargetMask),
+                                homekit_target_mode_name,
+                                sizeof(homekit_target_mode_name));
 }
 
 void copyString(char* out, size_t out_len, const char* value) {
@@ -145,7 +147,7 @@ void loadDefaults() {
     copyString(settings.homeKitSerial, sizeof(settings.homeKitSerial), kDefaultHomeKitSerial);
     copyString(settings.homeKitSetupId, sizeof(settings.homeKitSetupId), kDefaultHomeKitSetupId);
     settings.homeKitSeparateAirflowTile = kDefaultHomeKitSeparateAirflowTile;
-    settings.homeKitTargetModeMask = kDefaultHomeKitTargetModeMask;
+    settings.acCapabilities = kDefaultAcCapabilities;
     settings.useRealCn105 = kDefaultUseRealCn105;
     settings.statusLedPin = kDefaultStatusLedPin;
     settings.cn105RxPin = kDefaultCn105RxPin;
@@ -208,6 +210,11 @@ bool validSetupId(const char* value) {
         }
     }
     return true;
+}
+
+bool validAcCapabilities(uint32_t value) {
+    return (value & ~device_settings::kAcCapabilityKnownMask) == 0 &&
+           (value & device_settings::kAcCapabilityTargetMask) != 0;
 }
 
 bool sanitizeHomeKitCode(const char* value, char* out_digits, size_t out_len) {
@@ -388,12 +395,39 @@ esp_err_t init() {
     loadStringSetting(handle, "hk_model", settings.homeKitModel, sizeof(settings.homeKitModel), &wrote_defaults);
     loadStringSetting(handle, "hk_serial", settings.homeKitSerial, sizeof(settings.homeKitSerial), &wrote_defaults);
     loadBoolSetting(handle, "hk_airtile", &settings.homeKitSeparateAirflowTile, &wrote_defaults);
-    char stored_hvac[12] = {};
-    formatHomeKitTargetModeMask(settings.homeKitTargetModeMask, stored_hvac, sizeof(stored_hvac));
-    loadStringSetting(handle, "hk_hvac", stored_hvac, sizeof(stored_hvac), &wrote_defaults);
-    if (!parseHomeKitTargetModeMaskLocal(stored_hvac, &settings.homeKitTargetModeMask)) {
-        ESP_LOGW(TAG, "Invalid HomeKit target mode mask in NVS: %s; using default 0,1,2", stored_hvac);
-        settings.homeKitTargetModeMask = kDefaultHomeKitTargetModeMask;
+
+    uint32_t stored_capabilities = settings.acCapabilities;
+    err = nvs_get_u32(handle, "ac_caps", &stored_capabilities);
+    if (err == ESP_OK) {
+        if (validAcCapabilities(stored_capabilities)) {
+            settings.acCapabilities = stored_capabilities;
+        } else {
+            ESP_LOGW(TAG, "Invalid AC capabilities in NVS: 0x%08lx; using default 0x%08lx",
+                     static_cast<unsigned long>(stored_capabilities),
+                     static_cast<unsigned long>(settings.acCapabilities));
+        }
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        char legacy_hvac[12] = {};
+        size_t legacy_hvac_len = sizeof(legacy_hvac);
+        if (nvs_get_str(handle, "hk_hvac", legacy_hvac, &legacy_hvac_len) == ESP_OK) {
+            uint8_t target_mask = 0;
+            if (parseHomeKitTargetModeMaskLocal(legacy_hvac, &target_mask)) {
+                settings.acCapabilities = (settings.acCapabilities & ~kAcCapabilityTargetMask) | target_mask;
+                ESP_LOGI(TAG, "Migrated legacy hk_hvac=%s into ac_caps=0x%08lx",
+                         legacy_hvac,
+                         static_cast<unsigned long>(settings.acCapabilities));
+            } else {
+                ESP_LOGW(TAG, "Invalid legacy hk_hvac in NVS: %s; using default 0,1,2", legacy_hvac);
+            }
+        }
+        nvs_set_u32(handle, "ac_caps", settings.acCapabilities);
+        wrote_defaults = true;
+    } else {
+        ESP_LOGW(TAG, "Failed reading AC capabilities: %s; using default", esp_err_to_name(err));
+    }
+    err = nvs_erase_key(handle, "hk_hvac");
+    if (err == ESP_OK) {
+        wrote_defaults = true;
     }
 
     char stored_setup_id[sizeof(settings.homeKitSetupId)] = {};
@@ -467,10 +501,11 @@ esp_err_t init() {
     refreshHomeKitTargetModeName();
     initialized = true;
     ESP_LOGI(TAG,
-             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s hk_hvac=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
+             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s ac_caps=0x%08lx hk_hvac=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
              settings.deviceName,
              setup_code_display,
              settings.homeKitSeparateAirflowTile ? "on" : "off",
+             static_cast<unsigned long>(settings.acCapabilities),
              homekit_target_mode_name,
              settings.useRealCn105 ? "real" : "mock",
              settings.statusLedPin,
@@ -539,12 +574,24 @@ bool homeKitSeparateAirflowTile() {
     return settings.homeKitSeparateAirflowTile;
 }
 
+uint32_t acCapabilities() {
+    return settings.acCapabilities;
+}
+
 uint8_t homeKitTargetModeMask() {
-    return settings.homeKitTargetModeMask;
+    return static_cast<uint8_t>(settings.acCapabilities & kAcCapabilityTargetMask);
 }
 
 const char* homeKitTargetModeMaskName() {
     return homekit_target_mode_name;
+}
+
+bool supportsUpDownAirflow() {
+    return (settings.acCapabilities & kAcCapabilityUpDownAirflow) != 0;
+}
+
+bool supportsLeftRightAirflow() {
+    return (settings.acCapabilities & kAcCapabilityLeftRightAirflow) != 0;
 }
 
 int statusLedPin() {
@@ -697,8 +744,8 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
         setMessage(message, message_len, "poll intervals are too small");
         return false;
     }
-    if (next.homeKitTargetModeMask == 0 || (next.homeKitTargetModeMask & ~kHomeKitTargetAllMask) != 0) {
-        setMessage(message, message_len, "invalid HomeKit target modes");
+    if (!validAcCapabilities(next.acCapabilities)) {
+        setMessage(message, message_len, "invalid AC capabilities");
         return false;
     }
 
@@ -718,7 +765,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSerial, next.homeKitSerial) != 0;
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSetupId, next.homeKitSetupId) != 0;
     needs_reboot = needs_reboot || settings.homeKitSeparateAirflowTile != next.homeKitSeparateAirflowTile;
-    needs_reboot = needs_reboot || settings.homeKitTargetModeMask != next.homeKitTargetModeMask;
+    needs_reboot = needs_reboot || (settings.acCapabilities & kAcCapabilityTargetMask) != (next.acCapabilities & kAcCapabilityTargetMask);
     needs_reboot = needs_reboot || settings.useRealCn105 != next.useRealCn105;
     needs_reboot = needs_reboot || settings.statusLedPin != next.statusLedPin;
     needs_reboot = needs_reboot || settings.cn105RxPin != next.cn105RxPin;
@@ -739,9 +786,8 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     nvs_set_str(handle, "hk_serial", next.homeKitSerial);
     nvs_set_str(handle, "hk_setupid", next.homeKitSetupId);
     nvs_set_u8(handle, "hk_airtile", next.homeKitSeparateAirflowTile ? 1 : 0);
-    char stored_homekit_target_modes[8] = {};
-    formatHomeKitTargetModeMask(next.homeKitTargetModeMask, stored_homekit_target_modes, sizeof(stored_homekit_target_modes));
-    nvs_set_str(handle, "hk_hvac", stored_homekit_target_modes);
+    nvs_set_u32(handle, "ac_caps", next.acCapabilities);
+    nvs_erase_key(handle, "hk_hvac");
     nvs_set_u8(handle, "use_real", next.useRealCn105 ? 1 : 0);
     nvs_set_i32(handle, "led_pin", next.statusLedPin);
     nvs_set_i32(handle, "rx_pin", next.cn105RxPin);

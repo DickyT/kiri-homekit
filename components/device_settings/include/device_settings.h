@@ -19,10 +19,22 @@
 
 namespace device_settings {
 
-inline constexpr uint8_t kHomeKitTargetAutoMask = 1u << 0;
-inline constexpr uint8_t kHomeKitTargetHeatMask = 1u << 1;
-inline constexpr uint8_t kHomeKitTargetCoolMask = 1u << 2;
-inline constexpr uint8_t kHomeKitTargetAllMask = kHomeKitTargetAutoMask | kHomeKitTargetHeatMask | kHomeKitTargetCoolMask;
+inline constexpr uint32_t kAcCapabilityTargetAuto = 1u << 0;
+inline constexpr uint32_t kAcCapabilityTargetHeat = 1u << 1;
+inline constexpr uint32_t kAcCapabilityTargetCool = 1u << 2;
+inline constexpr uint32_t kAcCapabilityUpDownAirflow = 1u << 3;
+inline constexpr uint32_t kAcCapabilityLeftRightAirflow = 1u << 4;
+inline constexpr uint32_t kAcCapabilityTargetMask =
+    kAcCapabilityTargetAuto | kAcCapabilityTargetHeat | kAcCapabilityTargetCool;
+inline constexpr uint32_t kAcCapabilityAirflowMask =
+    kAcCapabilityUpDownAirflow | kAcCapabilityLeftRightAirflow;
+inline constexpr uint32_t kAcCapabilityKnownMask = kAcCapabilityTargetMask | kAcCapabilityAirflowMask;
+inline constexpr uint32_t kAcCapabilityDefault = kAcCapabilityKnownMask;
+
+inline constexpr uint8_t kHomeKitTargetAutoMask = static_cast<uint8_t>(kAcCapabilityTargetAuto);
+inline constexpr uint8_t kHomeKitTargetHeatMask = static_cast<uint8_t>(kAcCapabilityTargetHeat);
+inline constexpr uint8_t kHomeKitTargetCoolMask = static_cast<uint8_t>(kAcCapabilityTargetCool);
+inline constexpr uint8_t kHomeKitTargetAllMask = static_cast<uint8_t>(kAcCapabilityTargetMask);
 
 struct Settings {
     char deviceName[64] = "";
@@ -34,7 +46,7 @@ struct Settings {
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
     bool homeKitSeparateAirflowTile = true;
-    uint8_t homeKitTargetModeMask = kHomeKitTargetAllMask;
+    uint32_t acCapabilities = kAcCapabilityDefault;
     bool useRealCn105 = true;
     int statusLedPin = board_profile::kDefaultStatusLedPin;
     int cn105RxPin = board_profile::kDefaultCn105RxPin;
@@ -64,8 +76,11 @@ const char* homeKitModel();
 const char* homeKitSerial();
 const char* homeKitSetupId();
 bool homeKitSeparateAirflowTile();
+uint32_t acCapabilities();
 uint8_t homeKitTargetModeMask();
 const char* homeKitTargetModeMaskName();
+bool supportsUpDownAirflow();
+bool supportsLeftRightAirflow();
 bool useRealCn105();
 int statusLedPin();
 int cn105RxPin();

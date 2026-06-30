@@ -226,7 +226,8 @@ bool homeKitDatabaseSettingsChanged(const device_settings::Settings& before, con
            std::strcmp(before.homeKitSerial, after.homeKitSerial) != 0 ||
            std::strcmp(before.homeKitSetupId, after.homeKitSetupId) != 0 ||
            before.homeKitSeparateAirflowTile != after.homeKitSeparateAirflowTile ||
-           before.homeKitTargetModeMask != after.homeKitTargetModeMask;
+           (before.acCapabilities & device_settings::kAcCapabilityTargetMask) !=
+               (after.acCapabilities & device_settings::kAcCapabilityTargetMask);
 }
 
 std::string deviceCfgJson() {
@@ -241,7 +242,7 @@ std::string deviceCfgJson() {
     body += "  \"hk_serial\": " + quotedJson(s.homeKitSerial) + ",\n";
     body += "  \"hk_setupid\": " + quotedJson(s.homeKitSetupId) + ",\n";
     body += "  \"hk_airtile\": " + std::string(s.homeKitSeparateAirflowTile ? "true" : "false") + ",\n";
-    body += "  \"hk_hvac\": " + quotedJson(device_settings::homeKitTargetModeMaskName()) + ",\n";
+    body += "  \"ac_caps\": " + std::to_string(s.acCapabilities) + ",\n";
     body += "  \"use_real\": " + std::string(s.useRealCn105 ? "true" : "false") + ",\n";
     body += "  \"led_pin\": " + std::to_string(s.statusLedPin) + ",\n";
     body += "  \"rx_pin\": " + std::to_string(s.cn105RxPin) + ",\n";
@@ -463,13 +464,22 @@ bool applyDeviceCfgJson(const char* json, size_t len, device_settings::Settings*
             i = next;
             continue;
         }
+        if (tokenEquals(json, key, "ac_caps") && parseJsonIntValue(json, value, &number)) {
+            if (number < 0) {
+                std::snprintf(error, error_len, "invalid AC capabilities");
+                return false;
+            }
+            out->acCapabilities = static_cast<uint32_t>(number);
+            i = next;
+            continue;
+        }
         if (tokenEquals(json, key, "hk_hvac") && tokenText(json, value, text, sizeof(text))) {
             uint8_t mask = device_settings::kHomeKitTargetAllMask;
             if (!device_settings::parseHomeKitTargetModeMask(text, &mask)) {
                 std::snprintf(error, error_len, "invalid HomeKit target modes");
                 return false;
             }
-            out->homeKitTargetModeMask = mask;
+            out->acCapabilities = (out->acCapabilities & ~device_settings::kAcCapabilityTargetMask) | mask;
             i = next;
             continue;
         }
@@ -699,6 +709,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   "\"homekit_serial\":\"%s\","
                   "\"homekit_setup_id\":\"%s\","
                   "\"homekit_separate_airflow_tile\":%s,"
+                  "\"ac_capabilities\":%lu,"
                   "\"homekit_hvac_modes\":\"%s\","
                   "\"led_pin\":%d,"
                   "\"cn105_mode\":\"%s\","
@@ -746,6 +757,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   esc_config_hk_serial,
                   esc_config_hk_setup_id,
                   config.homeKitSeparateAirflowTile ? "true" : "false",
+                  static_cast<unsigned long>(config.acCapabilities),
                   device_settings::homeKitTargetModeMaskName(),
                   config.statusLedPin,
                   transport_mode,
@@ -884,6 +896,9 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
 
     char vane[16] = {};
     if (web_http::queryValue(query, "vane", vane, sizeof(vane))) {
+        if (!device_settings::supportsUpDownAirflow()) {
+            return web_http::sendJsonError(req, "up/down airflow is disabled in AC capabilities");
+        }
         command.hasVane = true;
         command.vane = vane;
         any = true;
@@ -891,6 +906,9 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
 
     char wide_vane[32] = {};
     if (web_http::queryValue(query, "wide_vane", wide_vane, sizeof(wide_vane))) {
+        if (!device_settings::supportsLeftRightAirflow()) {
+            return web_http::sendJsonError(req, "left/right airflow is disabled in AC capabilities");
+        }
         command.hasWideVane = true;
         command.wideVane = wide_vane;
         any = true;
@@ -905,10 +923,14 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
         command.temperatureF = mock.targetTemperatureF;
         command.hasFan = true;
         command.fan = mock.fan;
-        command.hasVane = true;
-        command.vane = mock.vane;
-        command.hasWideVane = true;
-        command.wideVane = mock.wideVane;
+        if (device_settings::supportsUpDownAirflow()) {
+            command.hasVane = true;
+            command.vane = mock.vane;
+        }
+        if (device_settings::supportsLeftRightAirflow()) {
+            command.hasWideVane = true;
+            command.wideVane = mock.wideVane;
+        }
     }
 
     cn105_core::Packet packet{};
@@ -1048,12 +1070,15 @@ esp_err_t configSaveHandler(httpd_req_t* req) {
                                           std::strcmp(value, "false") != 0 &&
                                           std::strcmp(value, "off") != 0;
     }
+    if (web_http::queryValue(body, "ac_capabilities", value, sizeof(value))) {
+        next.acCapabilities = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
+    }
     if (web_http::queryValue(body, "homekit_hvac_modes", value, sizeof(value))) {
         uint8_t mask = device_settings::kHomeKitTargetAllMask;
         if (!device_settings::parseHomeKitTargetModeMask(value, &mask)) {
             return web_http::sendJsonError(req, "invalid HomeKit target modes");
         }
-        next.homeKitTargetModeMask = mask;
+        next.acCapabilities = (next.acCapabilities & ~device_settings::kAcCapabilityTargetMask) | mask;
     }
     if (web_http::queryValue(body, "led_pin", value, sizeof(value))) {
         next.statusLedPin = std::atoi(value);

@@ -71,10 +71,15 @@ const CN105_ADVANCED_KEYS = [
 ] as const;
 
 const HVAC_TARGET_OPTIONS = [
-  { value: "0", label: "Auto", detail: "Target value 0" },
-  { value: "1", label: "Heat", detail: "Target value 1" },
-  { value: "2", label: "Cool", detail: "Target value 2" },
+  { value: "0", bit: 1 << 0, label: "Auto", detail: "Target value 0" },
+  { value: "1", bit: 1 << 1, label: "Heat", detail: "Target value 1" },
+  { value: "2", bit: 1 << 2, label: "Cool", detail: "Target value 2" },
 ] as const;
+const AC_CAP_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2);
+const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
+const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 4;
+const AC_CAP_KNOWN_MASK = AC_CAP_TARGET_MASK | AC_CAP_UP_DOWN_AIRFLOW | AC_CAP_LEFT_RIGHT_AIRFLOW;
+const AC_CAP_DEFAULT = AC_CAP_KNOWN_MASK;
 
 type SettingsForm = Record<string, string>;
 
@@ -113,7 +118,7 @@ function defaultSettings(): SettingsForm {
     "cfg-homekit-model": "",
     "cfg-homekit-serial": "",
     "cfg-homekit-separate-airflow-tile": "1",
-    "cfg-homekit-hvac-modes": "0,1,2",
+    "cfg-ac-capabilities": String(AC_CAP_DEFAULT),
     "cfg-led-pin": "27",
     "cfg-cn105-mode": "real",
     "cfg-log-level": "info",
@@ -141,7 +146,7 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
     "cfg-homekit-model": cfg?.homekit_model ?? "",
     "cfg-homekit-serial": cfg?.homekit_serial ?? "",
     "cfg-homekit-separate-airflow-tile": cfg?.homekit_separate_airflow_tile === false ? "0" : "1",
-    "cfg-homekit-hvac-modes": normalizeHvacModes(cfg?.homekit_hvac_modes),
+    "cfg-ac-capabilities": String(normalizeAcCapabilities(cfg?.ac_capabilities, cfg?.homekit_hvac_modes)),
     "cfg-led-pin": String(cfg?.led_pin ?? defaults.led_pin ?? 27),
     "cfg-cn105-mode": cfg?.cn105_mode ?? "real",
     "cfg-log-level": cfg?.log_level ?? "info",
@@ -171,24 +176,54 @@ function normalizeHvacModes(value: string | undefined): string {
   return ordered.length ? ordered.join(",") : "0,1,2";
 }
 
-function hvacModeSet(value: string | undefined): Set<string> {
-  return new Set(normalizeHvacModes(value).split(","));
+function normalizeAcCapabilities(value: number | string | undefined, fallbackHvacModes?: string): number {
+  let caps = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(caps)) {
+    caps = AC_CAP_DEFAULT;
+    if (fallbackHvacModes) {
+      const targetBits = normalizeHvacModes(fallbackHvacModes).split(",").reduce((acc, v) => acc | (1 << Number(v)), 0);
+      caps = (caps & ~AC_CAP_TARGET_MASK) | targetBits;
+    }
+  }
+  caps &= AC_CAP_KNOWN_MASK;
+  if ((caps & AC_CAP_TARGET_MASK) === 0) caps |= AC_CAP_TARGET_MASK;
+  return caps;
 }
 
-function hvacModeSummary(value: string | undefined): string {
-  const selected = hvacModeSet(value);
+function hvacModeSetFromCapabilities(caps: number): Set<string> {
+  const selected = new Set<string>();
+  for (const option of HVAC_TARGET_OPTIONS) {
+    if ((caps & option.bit) !== 0) selected.add(option.value);
+  }
+  return selected;
+}
+
+function hvacModeSummary(caps: number): string {
+  const selected = hvacModeSetFromCapabilities(caps);
   return HVAC_TARGET_OPTIONS
     .filter((o) => selected.has(o.value))
     .map((o) => `${o.label} (${o.value})`)
     .join(", ");
 }
 
-function hvacCurrentSummary(value: string | undefined): string {
-  const selected = hvacModeSet(value);
+function hvacCurrentSummary(caps: number): string {
+  const selected = hvacModeSetFromCapabilities(caps);
   const current = ["Inactive (0)", "Idle (1)"];
   if (selected.has("0") || selected.has("1")) current.push("Heating (2)");
   if (selected.has("0") || selected.has("2")) current.push("Cooling (3)");
   return current.join(", ");
+}
+
+function airflowSummary(caps: number): string {
+  const names = [];
+  if ((caps & AC_CAP_UP_DOWN_AIRFLOW) !== 0) names.push("Up/Down");
+  if ((caps & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0) names.push("Left/Right");
+  return names.length ? names.join(" + ") : "Hidden";
+}
+
+function acCapabilitiesSummary(value: string | undefined): string {
+  const caps = normalizeAcCapabilities(value);
+  return `${hvacModeSummary(caps)} · Airflow: ${airflowSummary(caps)}`;
 }
 
 // ----- transport pre helper -----
@@ -249,13 +284,13 @@ export function AdminPage(): JSX.Element {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [savedHomeKitDisplayMode, setSavedHomeKitDisplayMode] = useState("1");
-  const [savedHomeKitHvacModes, setSavedHomeKitHvacModes] = useState("0,1,2");
+  const [savedAcCapabilities, setSavedAcCapabilities] = useState(AC_CAP_DEFAULT);
   const [savedAdvanced, setSavedAdvanced] = useState<SettingsForm | null>(null);
   const [advancedDirty, setAdvancedDirty] = useState(false);
   const [cn105Open, setCn105Open] = useState(false);
   const [cn105Snapshot, setCn105Snapshot] = useState<SettingsForm | null>(null);
-  const [hvacOpen, setHvacOpen] = useState(false);
-  const [hvacSnapshot, setHvacSnapshot] = useState<string | null>(null);
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  const [capabilitiesSnapshot, setCapabilitiesSnapshot] = useState<string | null>(null);
   const [otaModalState, setOtaModalState] = useState<OtaUploadResult | null>(null);
   const [otaApplying, setOtaApplying] = useState(false);
   const [otaApplyStatus, setOtaApplyStatus] = useState("");
@@ -281,9 +316,10 @@ export function AdminPage(): JSX.Element {
   const [tick, setTick] = useState(0);
   const rebootTimer = useRef<number | undefined>(undefined);
   const otaInputRef = useRef<HTMLInputElement>(null);
+  const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
   const homeKitPresentationChanged =
     (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
-    normalizeHvacModes(settings["cfg-homekit-hvac-modes"]) !== savedHomeKitHvacModes;
+    (currentAcCapabilities & AC_CAP_TARGET_MASK) !== (savedAcCapabilities & AC_CAP_TARGET_MASK);
 
   // Bootstrap settings from first status that arrives.
   useEffect(() => {
@@ -291,7 +327,7 @@ export function AdminPage(): JSX.Element {
     const initialSettings = settingsFromConfig(s.config, s.device, s.board);
     setSettings(initialSettings);
     setSavedHomeKitDisplayMode(initialSettings["cfg-homekit-separate-airflow-tile"] ?? "1");
-    setSavedHomeKitHvacModes(normalizeHvacModes(initialSettings["cfg-homekit-hvac-modes"]));
+    setSavedAcCapabilities(normalizeAcCapabilities(initialSettings["cfg-ac-capabilities"]));
     setTransport(s.cn105.transport_status);
     setSettingsLoaded(true);
   }, [s]);
@@ -351,28 +387,36 @@ export function AdminPage(): JSX.Element {
     setCn105Open(false);
   }
 
-  function openHvacModes(): void {
-    setHvacSnapshot(settings["cfg-homekit-hvac-modes"] ?? "0,1,2");
-    setHvacOpen(true);
+  function openCapabilities(): void {
+    setCapabilitiesSnapshot(settings["cfg-ac-capabilities"] ?? String(AC_CAP_DEFAULT));
+    setCapabilitiesOpen(true);
   }
 
-  function closeHvacModes(keep: boolean): void {
-    if (!keep && hvacSnapshot !== null) {
-      setSettings((prev) => ({ ...prev, "cfg-homekit-hvac-modes": hvacSnapshot }));
+  function closeCapabilities(keep: boolean): void {
+    if (!keep && capabilitiesSnapshot !== null) {
+      setSettings((prev) => ({ ...prev, "cfg-ac-capabilities": capabilitiesSnapshot }));
     }
-    setHvacSnapshot(null);
-    setHvacOpen(false);
+    setCapabilitiesSnapshot(null);
+    setCapabilitiesOpen(false);
   }
 
-  function toggleHvacMode(value: string): void {
-    const selected = hvacModeSet(settings["cfg-homekit-hvac-modes"]);
-    if (selected.has(value)) {
-      if (selected.size === 1) return;
-      selected.delete(value);
+  function updateAcCapabilities(nextCaps: number): void {
+    update("cfg-ac-capabilities", String(normalizeAcCapabilities(nextCaps)));
+  }
+
+  function toggleHvacMode(bit: number): void {
+    let caps = currentAcCapabilities;
+    if ((caps & bit) !== 0) {
+      if ((caps & AC_CAP_TARGET_MASK) === bit) return;
+      caps &= ~bit;
     } else {
-      selected.add(value);
+      caps |= bit;
     }
-    update("cfg-homekit-hvac-modes", HVAC_TARGET_OPTIONS.map((o) => o.value).filter((v) => selected.has(v)).join(","));
+    updateAcCapabilities(caps);
+  }
+
+  function toggleCapability(bit: number): void {
+    updateAcCapabilities(currentAcCapabilities ^ bit);
   }
 
   async function refreshTransport(): Promise<void> {
@@ -459,7 +503,7 @@ export function AdminPage(): JSX.Element {
     params.set("homekit_serial", settings["cfg-homekit-serial"]?.trim() ?? "");
     params.set("homekit_setup_id", (settings["cfg-homekit-setup-id"] ?? "").trim().toUpperCase());
     params.set("homekit_separate_airflow_tile", settings["cfg-homekit-separate-airflow-tile"] ?? "0");
-    params.set("homekit_hvac_modes", normalizeHvacModes(settings["cfg-homekit-hvac-modes"]));
+    params.set("ac_capabilities", String(currentAcCapabilities));
     params.set("led_pin", settings["cfg-led-pin"] ?? "");
     params.set("cn105_mode", settings["cfg-cn105-mode"] ?? "real");
     for (const k of CN105_ADVANCED_KEYS) {
@@ -699,9 +743,9 @@ export function AdminPage(): JSX.Element {
               <option value="1">Separate airflow tile</option>
             </select>
           </Field>
-          <Field label="Supported HVAC Modes">
-            <button class="btn config-summary" type="button" onClick={openHvacModes} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
-              {hvacModeSummary(settings["cfg-homekit-hvac-modes"])}
+          <Field label="AC Capabilities">
+            <button class="btn config-summary" type="button" onClick={openCapabilities} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
+              {acCapabilitiesSummary(settings["cfg-ac-capabilities"])}
             </button>
           </Field>
           <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
@@ -805,23 +849,23 @@ export function AdminPage(): JSX.Element {
         </div>
       </Modal>
 
-      {/* HomeKit HVAC mode modal */}
+      {/* AC capabilities modal */}
       <Modal
-        open={hvacOpen}
-        onClose={() => closeHvacModes(false)}
-        title="Supported HVAC Modes"
-        subtitle="Choose the HomeKit Target Heater Cooler State values this unit should advertise. Current state values are derived automatically."
+        open={capabilitiesOpen}
+        onClose={() => closeCapabilities(false)}
+        title="AC Capabilities"
+        subtitle="Describe what this indoor unit supports. Kiri hides unsupported Web UI controls and advertises selected HomeKit modes."
         size="wide"
       >
         <div class="danger-banner">
           <strong>Apple Home cache</strong>
-          If you change this, save and reboot first, then remove and re-add the accessory in Apple Home. You do not need to reset HomeKit inside Kiri Bridge.
+          If you change HomeKit HVAC modes, save and reboot first, then remove and re-add the accessory in Apple Home. Airflow-only changes just update the Web UI. You do not need to reset HomeKit inside Kiri Bridge.
         </div>
+        <div class="subtitle" style={{ marginTop: "14px" }}>HomeKit HVAC Modes</div>
         <div class="grid2">
           {HVAC_TARGET_OPTIONS.map((option) => {
-            const selected = hvacModeSet(settings["cfg-homekit-hvac-modes"]);
-            const checked = selected.has(option.value);
-            const disabled = checked && selected.size === 1;
+            const checked = (currentAcCapabilities & option.bit) !== 0;
+            const disabled = checked && (currentAcCapabilities & AC_CAP_TARGET_MASK) === option.bit;
             return (
               <Field key={option.value} label={option.label}>
                 <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
@@ -829,7 +873,7 @@ export function AdminPage(): JSX.Element {
                     type="checkbox"
                     checked={checked}
                     disabled={disabled}
-                    onChange={() => toggleHvacMode(option.value)}
+                    onChange={() => toggleHvacMode(option.bit)}
                   />
                   <span>{option.detail}</span>
                 </label>
@@ -837,15 +881,41 @@ export function AdminPage(): JSX.Element {
             );
           })}
         </div>
+        <div class="subtitle" style={{ marginTop: "14px" }}>Airflow Controls</div>
+        <div class="grid2">
+          <Field label="Up/Down Airflow">
+            <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
+              <input
+                type="checkbox"
+                checked={(currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0}
+                onChange={() => toggleCapability(AC_CAP_UP_DOWN_AIRFLOW)}
+              />
+              <span>Horizontal flap control in the Web UI</span>
+            </label>
+          </Field>
+          <Field label="Left/Right Airflow">
+            <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
+              <input
+                type="checkbox"
+                checked={(currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0}
+                onChange={() => toggleCapability(AC_CAP_LEFT_RIGHT_AIRFLOW)}
+              />
+              <span>Vertical vane control in the Web UI</span>
+            </label>
+          </Field>
+        </div>
         <div class="subtitle" style={{ marginTop: "14px" }}>
-          Target values: {hvacModeSummary(settings["cfg-homekit-hvac-modes"])}
+          Target values: {hvacModeSummary(currentAcCapabilities)}
         </div>
         <div class="subtitle" style={{ marginTop: "8px" }}>
-          Current values exposed: {hvacCurrentSummary(settings["cfg-homekit-hvac-modes"])}
+          Current values exposed: {hvacCurrentSummary(currentAcCapabilities)}
+        </div>
+        <div class="subtitle" style={{ marginTop: "8px" }}>
+          Web airflow controls: {airflowSummary(currentAcCapabilities)}
         </div>
         <div class="modal-actions">
-          <Btn variant="primary" onClick={() => closeHvacModes(true)}>Confirm</Btn>
-          <Btn onClick={() => closeHvacModes(false)}>Cancel</Btn>
+          <Btn variant="primary" onClick={() => closeCapabilities(true)}>Confirm</Btn>
+          <Btn onClick={() => closeCapabilities(false)}>Cancel</Btn>
         </div>
       </Modal>
 
