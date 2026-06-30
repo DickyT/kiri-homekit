@@ -206,6 +206,14 @@ function hvacModeSummary(caps: number): string {
     .join(", ");
 }
 
+function hvacModeCompactSummary(caps: number): string {
+  const selected = hvacModeSetFromCapabilities(caps);
+  return HVAC_TARGET_OPTIONS
+    .filter((o) => selected.has(o.value))
+    .map((o) => o.label)
+    .join(" / ");
+}
+
 function hvacCurrentSummary(caps: number): string {
   const selected = hvacModeSetFromCapabilities(caps);
   const current = ["Inactive (0)", "Idle (1)"];
@@ -223,7 +231,7 @@ function airflowSummary(caps: number): string {
 
 function acCapabilitiesSummary(value: string | undefined): string {
   const caps = normalizeAcCapabilities(value);
-  return `${hvacModeSummary(caps)} · Airflow: ${airflowSummary(caps)}`;
+  return `${hvacModeCompactSummary(caps)} · ${airflowSummary(caps)}`;
 }
 
 // ----- transport pre helper -----
@@ -745,7 +753,7 @@ export function AdminPage(): JSX.Element {
           </Field>
           <Field label="AC Capabilities">
             <button class="btn config-summary" type="button" onClick={openCapabilities} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
-              {acCapabilitiesSummary(settings["cfg-ac-capabilities"])}
+              <span class="config-summary-text">{acCapabilitiesSummary(settings["cfg-ac-capabilities"])}</span>
             </button>
           </Field>
           <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
@@ -767,7 +775,7 @@ export function AdminPage(): JSX.Element {
           </Field>
           <Field label="CN105 Advanced">
             <button class={"btn config-summary " + (advancedDirty ? "dirty" : "")} type="button" onClick={openCn105} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
-              {(advancedDirty ? "* " : "") + cn105Summary(settings)}
+              <span class="config-summary-text">{(advancedDirty ? "* " : "") + cn105Summary(settings)}</span>
             </button>
           </Field>
         </div>

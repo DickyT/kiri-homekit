@@ -1118,7 +1118,18 @@ nav.tabs .tab-button svg {
   text-transform: none;
   letter-spacing: .04em;
   font-size: 13px;
-  text-align: left
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap
+}
+
+.config-summary-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap
 }
 
 .config-summary.dirty {
