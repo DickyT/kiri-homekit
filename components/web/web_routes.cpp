@@ -226,6 +226,7 @@ bool homeKitDatabaseSettingsChanged(const device_settings::Settings& before, con
            std::strcmp(before.homeKitSerial, after.homeKitSerial) != 0 ||
            std::strcmp(before.homeKitSetupId, after.homeKitSetupId) != 0 ||
            before.homeKitSeparateAirflowTile != after.homeKitSeparateAirflowTile ||
+           before.homeKitAdvancedMapping != after.homeKitAdvancedMapping ||
            (before.acCapabilities & device_settings::kAcCapabilityTargetMask) !=
                (after.acCapabilities & device_settings::kAcCapabilityTargetMask);
 }
@@ -242,6 +243,7 @@ std::string deviceCfgJson() {
     body += "  \"hk_serial\": " + quotedJson(s.homeKitSerial) + ",\n";
     body += "  \"hk_setupid\": " + quotedJson(s.homeKitSetupId) + ",\n";
     body += "  \"hk_airtile\": " + std::string(s.homeKitSeparateAirflowTile ? "true" : "false") + ",\n";
+    body += "  \"hk_map\": " + std::to_string(s.homeKitAdvancedMapping) + ",\n";
     body += "  \"ac_caps\": " + std::to_string(s.acCapabilities) + ",\n";
     body += "  \"use_real\": " + std::string(s.useRealCn105 ? "true" : "false") + ",\n";
     body += "  \"led_pin\": " + std::to_string(s.statusLedPin) + ",\n";
@@ -461,6 +463,15 @@ bool applyDeviceCfgJson(const char* json, size_t len, device_settings::Settings*
         if (tokenEquals(json, key, "hk_setupid") && tokenText(json, value, out->homeKitSetupId, sizeof(out->homeKitSetupId))) { i = next; continue; }
         if (tokenEquals(json, key, "hk_airtile") && parseJsonBoolValue(json, value, &boolean)) {
             out->homeKitSeparateAirflowTile = boolean;
+            i = next;
+            continue;
+        }
+        if (tokenEquals(json, key, "hk_map") && parseJsonIntValue(json, value, &number)) {
+            if (number < 0 || number > device_settings::kHomeKitMapKnownMask) {
+                std::snprintf(error, error_len, "invalid HomeKit advanced mapping");
+                return false;
+            }
+            out->homeKitAdvancedMapping = static_cast<uint8_t>(number);
             i = next;
             continue;
         }
@@ -709,6 +720,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   "\"homekit_serial\":\"%s\","
                   "\"homekit_setup_id\":\"%s\","
                   "\"homekit_separate_airflow_tile\":%s,"
+                  "\"homekit_advanced_mapping\":%u,"
                   "\"ac_capabilities\":%lu,"
                   "\"homekit_hvac_modes\":\"%s\","
                   "\"led_pin\":%d,"
@@ -757,6 +769,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   esc_config_hk_serial,
                   esc_config_hk_setup_id,
                   config.homeKitSeparateAirflowTile ? "true" : "false",
+                  static_cast<unsigned>(config.homeKitAdvancedMapping),
                   static_cast<unsigned long>(config.acCapabilities),
                   device_settings::homeKitTargetModeMaskName(),
                   config.statusLedPin,
@@ -1069,6 +1082,15 @@ esp_err_t configSaveHandler(httpd_req_t* req) {
         next.homeKitSeparateAirflowTile = std::strcmp(value, "0") != 0 &&
                                           std::strcmp(value, "false") != 0 &&
                                           std::strcmp(value, "off") != 0;
+    }
+    if (web_http::queryValue(body, "homekit_advanced_mapping", value, sizeof(value))) {
+        char* end = nullptr;
+        const unsigned long mapping = std::strtoul(value, &end, 10);
+        if (value[0] == '\0' || end == nullptr || *end != '\0' ||
+            mapping > device_settings::kHomeKitMapKnownMask) {
+            return web_http::sendJsonError(req, "invalid HomeKit advanced mapping");
+        }
+        next.homeKitAdvancedMapping = static_cast<uint8_t>(mapping);
     }
     if (web_http::queryValue(body, "ac_capabilities", value, sizeof(value))) {
         next.acCapabilities = static_cast<uint32_t>(std::strtoul(value, nullptr, 10));

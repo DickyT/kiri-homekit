@@ -80,6 +80,18 @@ const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
 const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 4;
 const AC_CAP_KNOWN_MASK = AC_CAP_TARGET_MASK | AC_CAP_UP_DOWN_AIRFLOW | AC_CAP_LEFT_RIGHT_AIRFLOW;
 const AC_CAP_DEFAULT = AC_CAP_KNOWN_MASK;
+const HK_MAP_UP_DOWN_TILT = 1 << 0;
+const HK_MAP_LEFT_RIGHT_TILT = 1 << 1;
+const HK_MAP_UP_DOWN_SWING = 1 << 2;
+const HK_MAP_LEFT_RIGHT_SWING = 1 << 3;
+const HK_MAP_KNOWN_MASK = HK_MAP_UP_DOWN_TILT | HK_MAP_LEFT_RIGHT_TILT | HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING;
+
+const HOMEKIT_MAPPING_OPTIONS = [
+  { bit: HK_MAP_UP_DOWN_TILT, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit slat service for the horizontal flap's fixed up/down position." },
+  { bit: HK_MAP_LEFT_RIGHT_TILT, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit slat service for the vertical vanes' fixed left/right position." },
+  { bit: HK_MAP_UP_DOWN_SWING, label: "Up/Down Swing Tile", detail: "Adds a HomeKit switch dedicated to horizontal flap oscillation." },
+  { bit: HK_MAP_LEFT_RIGHT_SWING, label: "Left/Right Swing Tile", detail: "Adds a HomeKit switch dedicated to vertical vane oscillation." },
+] as const;
 
 type SettingsForm = Record<string, string>;
 
@@ -118,6 +130,7 @@ function defaultSettings(): SettingsForm {
     "cfg-homekit-model": "",
     "cfg-homekit-serial": "",
     "cfg-homekit-separate-airflow-tile": "1",
+    "cfg-homekit-advanced-mapping": "0",
     "cfg-ac-capabilities": String(AC_CAP_DEFAULT),
     "cfg-led-pin": "27",
     "cfg-cn105-mode": "real",
@@ -146,6 +159,7 @@ function settingsFromConfig(cfg: DeviceConfig | undefined, deviceFallback: strin
     "cfg-homekit-model": cfg?.homekit_model ?? "",
     "cfg-homekit-serial": cfg?.homekit_serial ?? "",
     "cfg-homekit-separate-airflow-tile": cfg?.homekit_separate_airflow_tile === false ? "0" : "1",
+    "cfg-homekit-advanced-mapping": String(normalizeHomeKitMapping(cfg?.homekit_advanced_mapping)),
     "cfg-ac-capabilities": String(normalizeAcCapabilities(cfg?.ac_capabilities, cfg?.homekit_hvac_modes)),
     "cfg-led-pin": String(cfg?.led_pin ?? defaults.led_pin ?? 27),
     "cfg-cn105-mode": cfg?.cn105_mode ?? "real",
@@ -190,6 +204,11 @@ function normalizeAcCapabilities(value: number | string | undefined, fallbackHva
   return caps;
 }
 
+function normalizeHomeKitMapping(value: number | string | undefined): number {
+  const mapping = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(mapping) ? mapping & HK_MAP_KNOWN_MASK : 0;
+}
+
 function hvacModeSetFromCapabilities(caps: number): Set<string> {
   const selected = new Set<string>();
   for (const option of HVAC_TARGET_OPTIONS) {
@@ -232,6 +251,13 @@ function airflowSummary(caps: number): string {
 function acCapabilitiesSummary(value: string | undefined): string {
   const caps = normalizeAcCapabilities(value);
   return `${hvacModeCompactSummary(caps)} · ${airflowSummary(caps)}`;
+}
+
+function homeKitMappingSummary(value: string | undefined): string {
+  const mapping = normalizeHomeKitMapping(value);
+  if (mapping === 0) return "None · Legacy Swing behavior";
+  const names = HOMEKIT_MAPPING_OPTIONS.filter((option) => (mapping & option.bit) !== 0).map((option) => option.label.replace(" Tile", ""));
+  return names.join(" · ");
 }
 
 // ----- transport pre helper -----
@@ -292,6 +318,7 @@ export function AdminPage(): JSX.Element {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [savedHomeKitDisplayMode, setSavedHomeKitDisplayMode] = useState("1");
+  const [savedHomeKitMapping, setSavedHomeKitMapping] = useState(0);
   const [savedAcCapabilities, setSavedAcCapabilities] = useState(AC_CAP_DEFAULT);
   const [savedAdvanced, setSavedAdvanced] = useState<SettingsForm | null>(null);
   const [advancedDirty, setAdvancedDirty] = useState(false);
@@ -299,6 +326,8 @@ export function AdminPage(): JSX.Element {
   const [cn105Snapshot, setCn105Snapshot] = useState<SettingsForm | null>(null);
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [capabilitiesSnapshot, setCapabilitiesSnapshot] = useState<string | null>(null);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [mappingSnapshot, setMappingSnapshot] = useState<string | null>(null);
   const [otaModalState, setOtaModalState] = useState<OtaUploadResult | null>(null);
   const [otaApplying, setOtaApplying] = useState(false);
   const [otaApplyStatus, setOtaApplyStatus] = useState("");
@@ -325,8 +354,11 @@ export function AdminPage(): JSX.Element {
   const rebootTimer = useRef<number | undefined>(undefined);
   const otaInputRef = useRef<HTMLInputElement>(null);
   const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
+  const currentHomeKitMapping = normalizeHomeKitMapping(settings["cfg-homekit-advanced-mapping"]);
+  const separateHomeKitDisplay = (settings["cfg-homekit-separate-airflow-tile"] ?? "1") === "1";
   const homeKitPresentationChanged =
     (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
+    currentHomeKitMapping !== savedHomeKitMapping ||
     (currentAcCapabilities & AC_CAP_TARGET_MASK) !== (savedAcCapabilities & AC_CAP_TARGET_MASK);
 
   // Bootstrap settings from first status that arrives.
@@ -335,6 +367,7 @@ export function AdminPage(): JSX.Element {
     const initialSettings = settingsFromConfig(s.config, s.device, s.board);
     setSettings(initialSettings);
     setSavedHomeKitDisplayMode(initialSettings["cfg-homekit-separate-airflow-tile"] ?? "1");
+    setSavedHomeKitMapping(normalizeHomeKitMapping(initialSettings["cfg-homekit-advanced-mapping"]));
     setSavedAcCapabilities(normalizeAcCapabilities(initialSettings["cfg-ac-capabilities"]));
     setTransport(s.cn105.transport_status);
     setSettingsLoaded(true);
@@ -427,6 +460,23 @@ export function AdminPage(): JSX.Element {
     updateAcCapabilities(currentAcCapabilities ^ bit);
   }
 
+  function openMapping(): void {
+    setMappingSnapshot(settings["cfg-homekit-advanced-mapping"] ?? "0");
+    setMappingOpen(true);
+  }
+
+  function closeMapping(keep: boolean): void {
+    if (!keep && mappingSnapshot !== null) {
+      setSettings((prev) => ({ ...prev, "cfg-homekit-advanced-mapping": mappingSnapshot }));
+    }
+    setMappingSnapshot(null);
+    setMappingOpen(false);
+  }
+
+  function toggleHomeKitMapping(bit: number): void {
+    update("cfg-homekit-advanced-mapping", String((currentHomeKitMapping ^ bit) & HK_MAP_KNOWN_MASK));
+  }
+
   async function refreshTransport(): Promise<void> {
     try { setTransport(await api.transportStatus()); }
     catch (e: any) { setTransport(undefined); }
@@ -511,6 +561,7 @@ export function AdminPage(): JSX.Element {
     params.set("homekit_serial", settings["cfg-homekit-serial"]?.trim() ?? "");
     params.set("homekit_setup_id", (settings["cfg-homekit-setup-id"] ?? "").trim().toUpperCase());
     params.set("homekit_separate_airflow_tile", settings["cfg-homekit-separate-airflow-tile"] ?? "0");
+    params.set("homekit_advanced_mapping", String(currentHomeKitMapping));
     params.set("ac_capabilities", String(currentAcCapabilities));
     params.set("led_pin", settings["cfg-led-pin"] ?? "");
     params.set("cn105_mode", settings["cfg-cn105-mode"] ?? "real");
@@ -756,6 +807,12 @@ export function AdminPage(): JSX.Element {
               <span class="config-summary-text">{acCapabilitiesSummary(settings["cfg-ac-capabilities"])}</span>
             </button>
           </Field>
+          <Field label="Advanced HomeKit Mapping">
+            <button class="btn config-summary" type="button" disabled={!separateHomeKitDisplay} onClick={openMapping} style={{ width: "100%", justifyContent: "flex-start", textTransform: "none", letterSpacing: ".04em", fontSize: "13px" }}>
+              <span class="config-summary-text">{separateHomeKitDisplay ? homeKitMappingSummary(settings["cfg-homekit-advanced-mapping"]) : "Requires Separate airflow tile"}</span>
+            </button>
+            {!separateHomeKitDisplay && <span class="field-hint">Select Separate airflow tile above to configure extra tilt and Swing tiles.</span>}
+          </Field>
           <Field label="Status LED GPIO"><input type="number" min={0} step={1} value={settings["cfg-led-pin"]} onInput={(e) => update("cfg-led-pin", (e.target as HTMLInputElement).value)} /></Field>
           <Field label="Log Level">
             <select value={settings["cfg-log-level"]} onChange={(e) => update("cfg-log-level", (e.target as HTMLSelectElement).value)}>
@@ -924,6 +981,48 @@ export function AdminPage(): JSX.Element {
         <div class="modal-actions">
           <Btn variant="primary" onClick={() => closeCapabilities(true)}>Confirm</Btn>
           <Btn onClick={() => closeCapabilities(false)}>Cancel</Btn>
+        </div>
+      </Modal>
+
+      {/* Advanced HomeKit mapping modal */}
+      <Modal
+        open={mappingOpen}
+        onClose={() => closeMapping(false)}
+        title="Advanced HomeKit Mapping"
+        subtitle="Add optional HomeKit services for each airflow axis. With no options selected, Separate airflow tile behaves exactly like the legacy implementation."
+        size="wide"
+      >
+        <div class="danger-banner">
+          <strong>Apple Home cache</strong>
+          Adding or removing these services may require removing and re-adding Kiri Bridge in Apple Home after Save and Reboot. Do not use Reset HomeKit inside Kiri Bridge.
+        </div>
+        <div class="grid2" style={{ marginTop: "14px" }}>
+          {HOMEKIT_MAPPING_OPTIONS.map((option) => (
+            <Field key={option.bit} label={option.label}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", minHeight: "58px" }}>
+                <input
+                  type="checkbox"
+                  checked={(currentHomeKitMapping & option.bit) !== 0}
+                  onChange={() => toggleHomeKitMapping(option.bit)}
+                />
+                <span>{option.detail}</span>
+              </label>
+            </Field>
+          ))}
+        </div>
+        <div class="guide-callout" style={{ marginTop: "18px" }}>
+          <strong>Original Swing control</strong>{" "}
+          {(currentHomeKitMapping & (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)) === (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)
+            ? "Both dedicated Swing switches are enabled, so the original Swing control is removed from the AC/Airflow service."
+            : (currentHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
+              ? "The original Swing control remains visible, but it controls only Left/Right Swing when that airflow axis is supported. Up/Down Swing belongs exclusively to its dedicated switch."
+              : (currentHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
+                ? "The original Swing control remains visible, but it controls only Up/Down Swing when that airflow axis is supported. Left/Right Swing belongs exclusively to its dedicated switch."
+                : "No dedicated Swing switches are enabled. The original Swing control continues to operate every supported airflow axis."}
+        </div>
+        <div class="modal-actions">
+          <Btn variant="primary" onClick={() => closeMapping(true)}>Confirm</Btn>
+          <Btn onClick={() => closeMapping(false)}>Cancel</Btn>
         </div>
       </Modal>
 

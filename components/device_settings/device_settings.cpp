@@ -34,6 +34,7 @@ constexpr char kDefaultHomeKitModel[] = "Kiri Bridge";
 constexpr char kDefaultHomeKitSerial[] = "KIRI-BRIDGE";
 constexpr char kDefaultHomeKitSetupId[] = "DKT1";
 constexpr bool kDefaultHomeKitSeparateAirflowTile = true;
+constexpr uint8_t kDefaultHomeKitAdvancedMapping = 0;
 constexpr uint32_t kDefaultAcCapabilities = device_settings::kAcCapabilityDefault;
 constexpr bool kDefaultUseRealCn105 = true;
 constexpr int kDefaultStatusLedPin = board_profile::kDefaultStatusLedPin;
@@ -147,6 +148,7 @@ void loadDefaults() {
     copyString(settings.homeKitSerial, sizeof(settings.homeKitSerial), kDefaultHomeKitSerial);
     copyString(settings.homeKitSetupId, sizeof(settings.homeKitSetupId), kDefaultHomeKitSetupId);
     settings.homeKitSeparateAirflowTile = kDefaultHomeKitSeparateAirflowTile;
+    settings.homeKitAdvancedMapping = kDefaultHomeKitAdvancedMapping;
     settings.acCapabilities = kDefaultAcCapabilities;
     settings.useRealCn105 = kDefaultUseRealCn105;
     settings.statusLedPin = kDefaultStatusLedPin;
@@ -215,6 +217,10 @@ bool validSetupId(const char* value) {
 bool validAcCapabilities(uint32_t value) {
     return (value & ~device_settings::kAcCapabilityKnownMask) == 0 &&
            (value & device_settings::kAcCapabilityTargetMask) != 0;
+}
+
+bool validHomeKitAdvancedMapping(uint8_t value) {
+    return (value & ~device_settings::kHomeKitMapKnownMask) == 0;
 }
 
 bool sanitizeHomeKitCode(const char* value, char* out_digits, size_t out_len) {
@@ -396,6 +402,21 @@ esp_err_t init() {
     loadStringSetting(handle, "hk_serial", settings.homeKitSerial, sizeof(settings.homeKitSerial), &wrote_defaults);
     loadBoolSetting(handle, "hk_airtile", &settings.homeKitSeparateAirflowTile, &wrote_defaults);
 
+    uint8_t stored_mapping = settings.homeKitAdvancedMapping;
+    err = nvs_get_u8(handle, "hk_map", &stored_mapping);
+    if (err == ESP_OK) {
+        if (validHomeKitAdvancedMapping(stored_mapping)) {
+            settings.homeKitAdvancedMapping = stored_mapping;
+        } else {
+            ESP_LOGW(TAG, "Invalid HomeKit advanced mapping in NVS: 0x%02x; using default", stored_mapping);
+        }
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        nvs_set_u8(handle, "hk_map", settings.homeKitAdvancedMapping);
+        wrote_defaults = true;
+    } else {
+        ESP_LOGW(TAG, "Failed reading HomeKit advanced mapping: %s; using default", esp_err_to_name(err));
+    }
+
     uint32_t stored_capabilities = settings.acCapabilities;
     err = nvs_get_u32(handle, "ac_caps", &stored_capabilities);
     if (err == ESP_OK) {
@@ -501,10 +522,11 @@ esp_err_t init() {
     refreshHomeKitTargetModeName();
     initialized = true;
     ESP_LOGI(TAG,
-             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s ac_caps=0x%08lx hk_hvac=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
+             "Loaded settings: name=%s homekit_code=%s hk_airtile=%s hk_map=0x%02x ac_caps=0x%08lx hk_hvac=%s transport=%s ledPin=%d wifi=%s cn105=rx%d/tx%d/%d/%s/rxPull=%s/txOD=%s poll_on=%lu poll_off=%lu log=%s",
              settings.deviceName,
              setup_code_display,
              settings.homeKitSeparateAirflowTile ? "on" : "off",
+             settings.homeKitAdvancedMapping,
              static_cast<unsigned long>(settings.acCapabilities),
              homekit_target_mode_name,
              settings.useRealCn105 ? "real" : "mock",
@@ -572,6 +594,26 @@ bool useRealCn105() {
 
 bool homeKitSeparateAirflowTile() {
     return settings.homeKitSeparateAirflowTile;
+}
+
+uint8_t homeKitAdvancedMapping() {
+    return settings.homeKitAdvancedMapping;
+}
+
+bool homeKitMapsUpDownTilt() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapUpDownTilt) != 0;
+}
+
+bool homeKitMapsLeftRightTilt() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapLeftRightTilt) != 0;
+}
+
+bool homeKitMapsUpDownSwing() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapUpDownSwing) != 0;
+}
+
+bool homeKitMapsLeftRightSwing() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapLeftRightSwing) != 0;
 }
 
 uint32_t acCapabilities() {
@@ -748,6 +790,10 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
         setMessage(message, message_len, "invalid AC capabilities");
         return false;
     }
+    if (!validHomeKitAdvancedMapping(next.homeKitAdvancedMapping)) {
+        setMessage(message, message_len, "invalid HomeKit advanced mapping");
+        return false;
+    }
 
     nvs_handle_t handle = 0;
     if (nvs_open(kNamespace, NVS_READWRITE, &handle) != ESP_OK) {
@@ -765,6 +811,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSerial, next.homeKitSerial) != 0;
     needs_reboot = needs_reboot || std::strcmp(settings.homeKitSetupId, next.homeKitSetupId) != 0;
     needs_reboot = needs_reboot || settings.homeKitSeparateAirflowTile != next.homeKitSeparateAirflowTile;
+    needs_reboot = needs_reboot || settings.homeKitAdvancedMapping != next.homeKitAdvancedMapping;
     needs_reboot = needs_reboot || (settings.acCapabilities & kAcCapabilityTargetMask) != (next.acCapabilities & kAcCapabilityTargetMask);
     needs_reboot = needs_reboot || settings.useRealCn105 != next.useRealCn105;
     needs_reboot = needs_reboot || settings.statusLedPin != next.statusLedPin;
@@ -786,6 +833,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     nvs_set_str(handle, "hk_serial", next.homeKitSerial);
     nvs_set_str(handle, "hk_setupid", next.homeKitSetupId);
     nvs_set_u8(handle, "hk_airtile", next.homeKitSeparateAirflowTile ? 1 : 0);
+    nvs_set_u8(handle, "hk_map", next.homeKitAdvancedMapping);
     nvs_set_u32(handle, "ac_caps", next.acCapabilities);
     nvs_erase_key(handle, "hk_hvac");
     nvs_set_u8(handle, "use_real", next.useRealCn105 ? 1 : 0);
@@ -820,7 +868,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
                   message_len,
                   "%s",
                   needs_reboot
-                      ? "Settings saved. Reboot required for device name, HomeKit metadata, HomeKit display mode, HomeKit supported modes, HomeKit setup code, CN105 mode, or baud changes."
+                      ? "Settings saved. Reboot required for device name, HomeKit metadata, HomeKit display or mapping, HomeKit supported modes, HomeKit setup code, CN105 mode, or baud changes."
                       : "Settings saved.");
     return true;
 }

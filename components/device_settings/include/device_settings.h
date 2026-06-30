@@ -36,6 +36,14 @@ inline constexpr uint8_t kHomeKitTargetHeatMask = static_cast<uint8_t>(kAcCapabi
 inline constexpr uint8_t kHomeKitTargetCoolMask = static_cast<uint8_t>(kAcCapabilityTargetCool);
 inline constexpr uint8_t kHomeKitTargetAllMask = static_cast<uint8_t>(kAcCapabilityTargetMask);
 
+inline constexpr uint8_t kHomeKitMapUpDownTilt = 1u << 0;
+inline constexpr uint8_t kHomeKitMapLeftRightTilt = 1u << 1;
+inline constexpr uint8_t kHomeKitMapUpDownSwing = 1u << 2;
+inline constexpr uint8_t kHomeKitMapLeftRightSwing = 1u << 3;
+inline constexpr uint8_t kHomeKitMapKnownMask =
+    kHomeKitMapUpDownTilt | kHomeKitMapLeftRightTilt |
+    kHomeKitMapUpDownSwing | kHomeKitMapLeftRightSwing;
+
 struct Settings {
     char deviceName[64] = "";
     char wifiSsid[33] = "";
@@ -46,6 +54,7 @@ struct Settings {
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
     bool homeKitSeparateAirflowTile = true;
+    uint8_t homeKitAdvancedMapping = 0;
     uint32_t acCapabilities = kAcCapabilityDefault;
     bool useRealCn105 = true;
     int statusLedPin = board_profile::kDefaultStatusLedPin;
@@ -76,6 +85,11 @@ const char* homeKitModel();
 const char* homeKitSerial();
 const char* homeKitSetupId();
 bool homeKitSeparateAirflowTile();
+uint8_t homeKitAdvancedMapping();
+bool homeKitMapsUpDownTilt();
+bool homeKitMapsLeftRightTilt();
+bool homeKitMapsUpDownSwing();
+bool homeKitMapsLeftRightSwing();
 uint32_t acCapabilities();
 uint8_t homeKitTargetModeMask();
 const char* homeKitTargetModeMaskName();

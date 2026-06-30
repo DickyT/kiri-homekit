@@ -46,6 +46,10 @@ constexpr uint8_t kTargetHeat = 1;
 constexpr uint8_t kTargetCool = 2;
 constexpr uint8_t kSwingDisabled = 0;
 constexpr uint8_t kSwingEnabled = 1;
+constexpr uint8_t kSlatFixed = 0;
+constexpr uint8_t kSlatSwinging = 2;
+constexpr uint8_t kHorizontalSlat = 0;
+constexpr uint8_t kVerticalSlat = 1;
 constexpr uint8_t kDisplayFahrenheit = 1;
 constexpr float kMinTargetCelsius = 10.0f;
 constexpr float kMaxTargetCelsius = 31.0f;
@@ -57,6 +61,10 @@ constexpr int64_t kGracePeriodUs = 3 * 1000 * 1000;
 hap_acc_t* accessory = nullptr;
 hap_serv_t* heater_cooler = nullptr;
 hap_serv_t* airflow_fan = nullptr;
+hap_serv_t* up_down_tilt_service = nullptr;
+hap_serv_t* left_right_tilt_service = nullptr;
+hap_serv_t* up_down_swing_service = nullptr;
+hap_serv_t* left_right_swing_service = nullptr;
 hap_char_t* active_char = nullptr;
 hap_char_t* current_temp_char = nullptr;
 hap_char_t* current_state_char = nullptr;
@@ -69,8 +77,20 @@ hap_char_t* temp_units_char = nullptr;
 hap_char_t* fan_active_char = nullptr;
 hap_char_t* fan_rotation_speed_char = nullptr;
 hap_char_t* fan_swing_mode_char = nullptr;
+hap_char_t* up_down_tilt_state_char = nullptr;
+hap_char_t* up_down_current_tilt_char = nullptr;
+hap_char_t* up_down_target_tilt_char = nullptr;
+hap_char_t* left_right_tilt_state_char = nullptr;
+hap_char_t* left_right_current_tilt_char = nullptr;
+hap_char_t* left_right_target_tilt_char = nullptr;
+hap_char_t* up_down_swing_on_char = nullptr;
+hap_char_t* left_right_swing_on_char = nullptr;
 char setup_payload[128] = "";
 char airflow_service_name[96] = "";
+char up_down_tilt_service_name[96] = "";
+char left_right_tilt_service_name[96] = "";
+char up_down_swing_service_name[96] = "";
+char left_right_swing_service_name[96] = "";
 char last_event[40] = "not-started";
 char last_error[96] = "";
 
@@ -250,10 +270,70 @@ const char* percentToFan(float percent) {
     return "4";
 }
 
+bool legacySwingControlsUpDown() {
+    return device_settings::supportsUpDownAirflow() &&
+           (!device_settings::homeKitSeparateAirflowTile() || !device_settings::homeKitMapsUpDownSwing());
+}
+
+bool legacySwingControlsLeftRight() {
+    return device_settings::supportsLeftRightAirflow() &&
+           (!device_settings::homeKitSeparateAirflowTile() || !device_settings::homeKitMapsLeftRightSwing());
+}
+
+bool hideLegacySwing() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::homeKitMapsUpDownSwing() &&
+           device_settings::homeKitMapsLeftRightSwing();
+}
+
 uint8_t swingFromMock(const cn105_core::MockState& state) {
-    const bool up_down_swing = device_settings::supportsUpDownAirflow() && equals(state.vane, "SWING");
-    const bool left_right_swing = device_settings::supportsLeftRightAirflow() && equals(state.wideVane, "SWING");
+    const bool up_down_swing = legacySwingControlsUpDown() && equals(state.vane, "SWING");
+    const bool left_right_swing = legacySwingControlsLeftRight() && equals(state.wideVane, "SWING");
     return up_down_swing || left_right_swing ? kSwingEnabled : kSwingDisabled;
+}
+
+bool upDownSwingFromMock(const cn105_core::MockState& state) {
+    return equals(state.vane, "SWING");
+}
+
+bool leftRightSwingFromMock(const cn105_core::MockState& state) {
+    return equals(state.wideVane, "SWING");
+}
+
+uint8_t slatState(bool swinging) {
+    return swinging ? kSlatSwinging : kSlatFixed;
+}
+
+int horizontalTiltFromVane(const char* vane) {
+    if (equals(vane, "1")) return 90;
+    if (equals(vane, "2")) return 45;
+    if (equals(vane, "4")) return -45;
+    if (equals(vane, "5")) return -75;
+    return 0;
+}
+
+const char* vaneFromHorizontalTilt(int angle) {
+    if (angle >= 68) return "1";
+    if (angle >= 23) return "2";
+    if (angle >= -22) return "3";
+    if (angle >= -60) return "4";
+    return "5";
+}
+
+int verticalTiltFromWideVane(const char* wide_vane) {
+    if (equals(wide_vane, "<<")) return -90;
+    if (equals(wide_vane, "<")) return -45;
+    if (equals(wide_vane, ">")) return 45;
+    if (equals(wide_vane, ">>")) return 90;
+    return 0;
+}
+
+const char* wideVaneFromVerticalTilt(int angle) {
+    if (angle <= -68) return "<<";
+    if (angle <= -23) return "<";
+    if (angle <= 22) return "|";
+    if (angle <= 67) return ">";
+    return ">>";
 }
 
 void setLastEvent(const char* value) {
@@ -281,6 +361,24 @@ void updateCharFloat(hap_char_t* character, float value) {
     }
     hap_val_t hap_value = {};
     hap_value.f = value;
+    hap_char_update_val(character, &hap_value);
+}
+
+void updateCharInt(hap_char_t* character, int value) {
+    if (character == nullptr) {
+        return;
+    }
+    hap_val_t hap_value = {};
+    hap_value.i = value;
+    hap_char_update_val(character, &hap_value);
+}
+
+void updateCharBool(hap_char_t* character, bool value) {
+    if (character == nullptr) {
+        return;
+    }
+    hap_val_t hap_value = {};
+    hap_value.b = value;
     hap_char_update_val(character, &hap_value);
 }
 
@@ -348,28 +446,48 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         return true;
     }
     if (character == swing_mode_char || character == fan_swing_mode_char) {
-        const bool supports_up_down = device_settings::supportsUpDownAirflow();
-        const bool supports_left_right = device_settings::supportsLeftRightAirflow();
-        if (!supports_up_down && !supports_left_right) {
+        const bool controls_up_down = legacySwingControlsUpDown();
+        const bool controls_left_right = legacySwingControlsLeftRight();
+        if (!controls_up_down && !controls_left_right) {
             return false;
         }
-        command->hasVane = supports_up_down;
-        command->hasWideVane = supports_left_right;
+        command->hasVane = controls_up_down;
+        command->hasWideVane = controls_left_right;
         if (value.u == kSwingEnabled) {
-            if (supports_up_down) {
+            if (controls_up_down) {
                 command->vane = "SWING";
             }
-            if (supports_left_right) {
+            if (controls_left_right) {
                 command->wideVane = "SWING";
             }
         } else {
-            if (supports_up_down) {
+            if (controls_up_down) {
                 command->vane = "AUTO";
             }
-            if (supports_left_right) {
+            if (controls_left_right) {
                 command->wideVane = "|";
             }
         }
+        return true;
+    }
+    if (character == up_down_target_tilt_char) {
+        command->hasVane = true;
+        command->vane = vaneFromHorizontalTilt(value.i);
+        return true;
+    }
+    if (character == left_right_target_tilt_char) {
+        command->hasWideVane = true;
+        command->wideVane = wideVaneFromVerticalTilt(value.i);
+        return true;
+    }
+    if (character == up_down_swing_on_char) {
+        command->hasVane = true;
+        command->vane = value.b ? "SWING" : "AUTO";
+        return true;
+    }
+    if (character == left_right_swing_on_char) {
+        command->hasWideVane = true;
+        command->wideVane = value.b ? "SWING" : "|";
         return true;
     }
     return false;
@@ -498,6 +616,34 @@ int airflowFanWrite(hap_write_data_t write_data[], int count, void*, void*) {
     return HAP_SUCCESS;
 }
 
+int advancedMappingWrite(hap_write_data_t write_data[], int count, void*, void*) {
+    cn105_core::SetCommand command{};
+    bool should_apply = false;
+
+    for (int i = 0; i < count; ++i) {
+        if (addClimateCommandFromWrite(write_data[i].hc, write_data[i].val, &command)) {
+            should_apply = true;
+        }
+        if (write_data[i].status != nullptr) {
+            *(write_data[i].status) = HAP_STATUS_SUCCESS;
+        }
+    }
+
+    if (should_apply && !applyCommand(command)) {
+        for (int i = 0; i < count; ++i) {
+            if (write_data[i].status != nullptr) {
+                *(write_data[i].status) = HAP_STATUS_RES_ABSENT;
+            }
+        }
+        return HAP_FAIL;
+    }
+
+    last_command_us = esp_timer_get_time();
+    homekit_bridge::syncFromMock();
+    setLastEvent("advanced-mapping-write");
+    return HAP_SUCCESS;
+}
+
 esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     const cn105_core::MockState state = cn105_core::getMockState();
     const bool separate_airflow_tile = device_settings::homeKitSeparateAirflowTile();
@@ -561,7 +707,9 @@ esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
     std::snprintf(airflow_service_name, sizeof(airflow_service_name), "%s Airflow", device_settings::deviceName());
     int ret = hap_serv_add_char(airflow_fan, hap_char_name_create(hapString(airflow_service_name)));
     ret |= hap_serv_add_char(airflow_fan, hap_char_rotation_speed_create(fanToPercent(state.fan)));
-    ret |= hap_serv_add_char(airflow_fan, hap_char_swing_mode_create(swingFromMock(state)));
+    if (!hideLegacySwing()) {
+        ret |= hap_serv_add_char(airflow_fan, hap_char_swing_mode_create(swingFromMock(state)));
+    }
     if (ret != HAP_SUCCESS) {
         setLastError("failed to add airflow fan characteristics");
         return ESP_FAIL;
@@ -573,8 +721,98 @@ esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
     fan_active_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_ACTIVE);
     fan_rotation_speed_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_ROTATION_SPEED);
     fan_swing_mode_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_SWING_MODE);
-    if (fan_active_char == nullptr || fan_rotation_speed_char == nullptr || fan_swing_mode_char == nullptr) {
+    if (fan_active_char == nullptr || fan_rotation_speed_char == nullptr ||
+        (!hideLegacySwing() && fan_swing_mode_char == nullptr)) {
         setLastError("airflow fan characteristic lookup failed");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    hap_serv_t*& service = up_down ? up_down_tilt_service : left_right_tilt_service;
+    hap_char_t*& state_char = up_down ? up_down_tilt_state_char : left_right_tilt_state_char;
+    char* service_name = up_down ? up_down_tilt_service_name : left_right_tilt_service_name;
+    const bool swinging = up_down ? upDownSwingFromMock(state) : leftRightSwingFromMock(state);
+
+    service = hap_serv_slat_create(slatState(swinging), up_down ? kHorizontalSlat : kVerticalSlat);
+    if (service == nullptr) {
+        setLastError("failed to create tilt service");
+        return ESP_FAIL;
+    }
+
+    std::snprintf(service_name,
+                  96,
+                  "%s %s Tilt",
+                  device_settings::deviceName(),
+                  up_down ? "Up/Down" : "Left/Right");
+    int ret = hap_serv_add_char(service, hap_char_name_create(hapString(service_name)));
+    if (up_down) {
+        const int target_tilt = horizontalTiltFromVane(state.vane);
+        const int current_tilt = equals(state.power, "OFF") ? -90 : target_tilt;
+        ret |= hap_serv_add_char(service, hap_char_current_horizontal_tilt_angle_create(current_tilt));
+        ret |= hap_serv_add_char(service, hap_char_target_horizontal_tilt_angle_create(target_tilt));
+    } else {
+        const int tilt = verticalTiltFromWideVane(state.wideVane);
+        ret |= hap_serv_add_char(service, hap_char_current_vertical_tilt_angle_create(tilt));
+        ret |= hap_serv_add_char(service, hap_char_target_vertical_tilt_angle_create(tilt));
+    }
+    if (ret != HAP_SUCCESS) {
+        setLastError("failed to add tilt characteristics");
+        return ESP_FAIL;
+    }
+
+    hap_serv_set_write_cb(service, advancedMappingWrite);
+    hap_acc_add_serv(target_accessory, service);
+
+    state_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_SLAT_STATE);
+    if (up_down) {
+        up_down_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_HORIZONTAL_TILT_ANGLE);
+        up_down_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_HORIZONTAL_TILT_ANGLE);
+        if (state_char == nullptr || up_down_current_tilt_char == nullptr || up_down_target_tilt_char == nullptr) {
+            setLastError("up/down tilt characteristic lookup failed");
+            return ESP_FAIL;
+        }
+    } else {
+        left_right_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_VERTICAL_TILT_ANGLE);
+        left_right_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_VERTICAL_TILT_ANGLE);
+        if (state_char == nullptr || left_right_current_tilt_char == nullptr || left_right_target_tilt_char == nullptr) {
+            setLastError("left/right tilt characteristic lookup failed");
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t addSwingSwitchService(hap_acc_t* target_accessory, bool up_down) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    hap_serv_t*& service = up_down ? up_down_swing_service : left_right_swing_service;
+    hap_char_t*& on_char = up_down ? up_down_swing_on_char : left_right_swing_on_char;
+    char* service_name = up_down ? up_down_swing_service_name : left_right_swing_service_name;
+    const bool swinging = up_down ? upDownSwingFromMock(state) : leftRightSwingFromMock(state);
+
+    service = hap_serv_switch_create(swinging);
+    if (service == nullptr) {
+        setLastError("failed to create Swing switch service");
+        return ESP_FAIL;
+    }
+
+    std::snprintf(service_name,
+                  96,
+                  "%s %s Swing",
+                  device_settings::deviceName(),
+                  up_down ? "Up/Down" : "Left/Right");
+    if (hap_serv_add_char(service, hap_char_name_create(hapString(service_name))) != HAP_SUCCESS) {
+        setLastError("failed to add Swing switch name");
+        return ESP_FAIL;
+    }
+
+    hap_serv_set_write_cb(service, advancedMappingWrite);
+    hap_acc_add_serv(target_accessory, service);
+    on_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_ON);
+    if (on_char == nullptr) {
+        setLastError("Swing switch characteristic lookup failed");
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -632,6 +870,30 @@ esp_err_t start() {
         const esp_err_t fan_err = addAirflowFanService(accessory);
         if (fan_err != ESP_OK) {
             return fan_err;
+        }
+        if (device_settings::homeKitMapsUpDownTilt() && device_settings::supportsUpDownAirflow()) {
+            const esp_err_t mapping_err = addTiltService(accessory, true);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
+        }
+        if (device_settings::homeKitMapsLeftRightTilt() && device_settings::supportsLeftRightAirflow()) {
+            const esp_err_t mapping_err = addTiltService(accessory, false);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
+        }
+        if (device_settings::homeKitMapsUpDownSwing() && device_settings::supportsUpDownAirflow()) {
+            const esp_err_t mapping_err = addSwingSwitchService(accessory, true);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
+        }
+        if (device_settings::homeKitMapsLeftRightSwing() && device_settings::supportsLeftRightAirflow()) {
+            const esp_err_t mapping_err = addSwingSwitchService(accessory, false);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
         }
     }
 
@@ -716,6 +978,18 @@ void syncFromMock() {
     updateCharUInt8(fan_active_char, activeFromMock(state));
     updateCharFloat(fan_rotation_speed_char, fanToPercent(state.fan));
     updateCharUInt8(fan_swing_mode_char, swingFromMock(state));
+    const bool up_down_swing = upDownSwingFromMock(state);
+    const int up_down_target_tilt = horizontalTiltFromVane(state.vane);
+    updateCharUInt8(up_down_tilt_state_char, slatState(up_down_swing));
+    updateCharInt(up_down_current_tilt_char, equals(state.power, "OFF") ? -90 : up_down_target_tilt);
+    updateCharInt(up_down_target_tilt_char, up_down_target_tilt);
+    updateCharBool(up_down_swing_on_char, up_down_swing);
+    const bool left_right_swing = leftRightSwingFromMock(state);
+    const int left_right_tilt = verticalTiltFromWideVane(state.wideVane);
+    updateCharUInt8(left_right_tilt_state_char, slatState(left_right_swing));
+    updateCharInt(left_right_current_tilt_char, left_right_tilt);
+    updateCharInt(left_right_target_tilt_char, left_right_tilt);
+    updateCharBool(left_right_swing_on_char, left_right_swing);
 }
 
 }  // namespace homekit_bridge
