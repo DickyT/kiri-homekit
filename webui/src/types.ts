@@ -140,6 +140,11 @@ export type AutomationStatus = {
   last_hook?: string;
   last_message?: string;
   run_count: number;
+  action_sequence: number;
+  action_pending: boolean;
+  last_action_confirmed: boolean;
+  last_action_attempts: number;
+  last_action_message?: string;
   last_actions: AutomationAction[];
 };
 

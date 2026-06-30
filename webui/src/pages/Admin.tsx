@@ -308,6 +308,11 @@ function renderAutomationLog(a: AutomationStatus | null): string {
   } else {
     lines.push("actions: none");
   }
+  if (a.action_sequence > 0) {
+    lines.push(`CN105 action: ${a.action_pending ? "pending" : (a.last_action_confirmed ? "confirmed" : "failed")}`);
+    lines.push(`confirmation attempts: ${a.last_action_attempts}`);
+    lines.push(`confirmation message: ${a.last_action_message || "--"}`);
+  }
   return lines.join("\n");
 }
 

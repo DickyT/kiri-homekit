@@ -404,6 +404,17 @@ std::string automationStatusJson() {
     body += platform_fs::jsonEscape(status.lastMessage);
     body += "\",\"run_count\":";
     body += std::to_string(status.runCount);
+    body += ",\"action_sequence\":";
+    body += std::to_string(status.actionSequence);
+    body += ",\"action_pending\":";
+    body += status.actionPending ? "true" : "false";
+    body += ",\"last_action_confirmed\":";
+    body += status.lastActionConfirmed ? "true" : "false";
+    body += ",\"last_action_attempts\":";
+    body += std::to_string(status.lastActionAttempts);
+    body += ",\"last_action_message\":\"";
+    body += platform_fs::jsonEscape(status.lastActionMessage);
+    body += "\"";
     body += ",\"last_actions\":";
     body += luaActionsJson(status.lastActions, status.lastActionCount);
     body += "}";

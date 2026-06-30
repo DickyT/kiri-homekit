@@ -66,8 +66,13 @@ struct RuntimeStatus {
     size_t lastPeakBytes = 0;
     size_t lastActionCount = 0;
     uint32_t runCount = 0;
+    uint32_t actionSequence = 0;
+    bool actionPending = false;
+    bool lastActionConfirmed = false;
+    uint8_t lastActionAttempts = 0;
     char lastHook[32] = "";
     char lastMessage[128] = "";
+    char lastActionMessage[128] = "";
     Action lastActions[kMaxActions] = {};
 };
 
@@ -78,6 +83,8 @@ bool setEnabled(bool enabled, char* error, size_t error_len);
 ValidationResult validateScript(const char* script, size_t scriptSize);
 bool saveScript(const char* script, size_t scriptSize, ValidationResult* validation);
 RuntimeStatus getRuntimeStatus();
+void recordActionQueued();
+void recordActionResult(bool confirmed, uint8_t attempts, const char* message);
 ProbeResult runProbe();
 RunResult runHook(const char* hookName,
                   const cn105_core::MockState& state,

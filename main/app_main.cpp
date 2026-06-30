@@ -24,6 +24,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "homekit_bridge.h"
 #include "lua_vm.h"
@@ -65,6 +66,22 @@ AutomationTarget automation_targets[kAutomationPendingTargets]{};
 int64_t automation_action_times[kAutomationBurstLimit]{};
 size_t automation_action_time_count = 0;
 uint8_t automation_consecutive_errors = 0;
+QueueHandle_t automation_action_queue = nullptr;
+
+struct AutomationCommandJob {
+    bool hasPower = false;
+    char power[16] = {};
+    bool hasMode = false;
+    char mode[16] = {};
+    bool hasTemperatureF = false;
+    int temperatureF = 0;
+    bool hasFan = false;
+    char fan[16] = {};
+    bool hasVane = false;
+    char vane[16] = {};
+    bool hasWideVane = false;
+    char wideVane[32] = {};
+};
 
 bool equals(const char* left, const char* right) {
     return left != nullptr && right != nullptr && std::strcmp(left, right) == 0;
@@ -110,6 +127,68 @@ bool allowAutomationActionBatch() {
 bool commandHasChanges(const cn105_core::SetCommand& command) {
     return command.hasPower || command.hasMode || command.hasTemperatureF || command.hasFan ||
            command.hasVane || command.hasWideVane;
+}
+
+AutomationCommandJob automationJobFromCommand(const cn105_core::SetCommand& command) {
+    AutomationCommandJob job{};
+    job.hasPower = command.hasPower;
+    job.hasMode = command.hasMode;
+    job.hasTemperatureF = command.hasTemperatureF;
+    job.temperatureF = command.temperatureF;
+    job.hasFan = command.hasFan;
+    job.hasVane = command.hasVane;
+    job.hasWideVane = command.hasWideVane;
+    if (command.hasPower) std::snprintf(job.power, sizeof(job.power), "%s", command.power);
+    if (command.hasMode) std::snprintf(job.mode, sizeof(job.mode), "%s", command.mode);
+    if (command.hasFan) std::snprintf(job.fan, sizeof(job.fan), "%s", command.fan);
+    if (command.hasVane) std::snprintf(job.vane, sizeof(job.vane), "%s", command.vane);
+    if (command.hasWideVane) std::snprintf(job.wideVane, sizeof(job.wideVane), "%s", command.wideVane);
+    return job;
+}
+
+cn105_core::SetCommand commandFromAutomationJob(const AutomationCommandJob& job) {
+    cn105_core::SetCommand command{};
+    command.hasPower = job.hasPower;
+    command.power = job.hasPower ? job.power : nullptr;
+    command.hasMode = job.hasMode;
+    command.mode = job.hasMode ? job.mode : nullptr;
+    command.hasTemperatureF = job.hasTemperatureF;
+    command.temperatureF = job.temperatureF;
+    command.hasFan = job.hasFan;
+    command.fan = job.hasFan ? job.fan : nullptr;
+    command.hasVane = job.hasVane;
+    command.vane = job.hasVane ? job.vane : nullptr;
+    command.hasWideVane = job.hasWideVane;
+    command.wideVane = job.hasWideVane ? job.wideVane : nullptr;
+    return command;
+}
+
+void automationActionTask(void*) {
+    AutomationCommandJob job{};
+    while (true) {
+        if (xQueueReceive(automation_action_queue, &job, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        const cn105_core::SetCommand command = commandFromAutomationJob(job);
+        cn105_transport::ApplyResult result{};
+        const bool ok = cn105_transport::queueSetCommandAndConfirm(command, &result);
+        lua_vm::recordActionResult(ok && result.confirmed, result.attempts, result.message);
+        if (!ok || !result.confirmed) {
+            ESP_LOGW(TAG, "Lua CN105 action failed after %u attempt(s): %s",
+                     static_cast<unsigned>(result.attempts), result.message);
+        } else {
+            ESP_LOGI(TAG, "Lua CN105 action confirmed after %u attempt(s)",
+                     static_cast<unsigned>(result.attempts));
+        }
+    }
+}
+
+bool initAutomationActionWorker() {
+    automation_action_queue = xQueueCreate(4, sizeof(AutomationCommandJob));
+    if (automation_action_queue == nullptr) {
+        return false;
+    }
+    return xTaskCreate(automationActionTask, "lua_cn105", 4096, nullptr, 4, nullptr) == pdPASS;
 }
 
 void removeNoOpFields(const cn105_core::MockState& state, cn105_core::SetCommand* command) {
@@ -290,12 +369,17 @@ void runLuaAutomationHook(const char* hook,
     }
 
     if (device_settings::useRealCn105()) {
-        if (!cn105_transport::queueSetCommand(command)) {
-            ESP_LOGW(TAG, "Lua hook %s could not queue CN105 command", hook);
-            noteAutomationFailure("CN105 command queue rejected automation action");
-        } else {
-            rememberAutomationTarget(command);
+        lua_vm::recordActionQueued();
+        const AutomationCommandJob job = automationJobFromCommand(command);
+        if (automation_action_queue == nullptr ||
+            xQueueSend(automation_action_queue, &job, pdMS_TO_TICKS(100)) != pdTRUE) {
+            constexpr const char* error = "automation confirmation queue is full";
+            ESP_LOGW(TAG, "Lua hook %s could not queue CN105 confirmation", hook);
+            lua_vm::recordActionResult(false, 0, error);
+            noteAutomationFailure(error);
+            return;
         }
+        rememberAutomationTarget(command);
         return;
     }
 
@@ -303,13 +387,18 @@ void runLuaAutomationHook(const char* hook,
     char error[96] = {};
     if (!cn105_core::buildSetPacket(command, &packet, error, sizeof(error))) {
         ESP_LOGW(TAG, "Lua hook %s command build failed: %s", hook, error);
+        lua_vm::recordActionQueued();
+        lua_vm::recordActionResult(false, 0, error);
         return;
     }
+    lua_vm::recordActionQueued();
     if (!cn105_core::applySetPacketToMock(packet.bytes, packet.length, error, sizeof(error))) {
         ESP_LOGW(TAG, "Lua hook %s mock apply failed: %s", hook, error);
+        lua_vm::recordActionResult(false, 0, error);
         noteAutomationFailure(error);
     } else {
         rememberAutomationTarget(command);
+        lua_vm::recordActionResult(true, 1, "mock state confirmed");
     }
 }
 
@@ -381,6 +470,9 @@ extern "C" void app_main(void) {
             ESP_LOGE(TAG, "CN105 transport start failed: %s", esp_err_to_name(transport_err));
         } else {
             ESP_LOGI(TAG, "CN105 real transport started");
+        }
+        if (!initAutomationActionWorker()) {
+            ESP_LOGE(TAG, "Lua automation confirmation worker failed to start");
         }
     } else {
         ESP_LOGI(TAG, "CN105 transport: mock mode");

@@ -757,6 +757,27 @@ RuntimeStatus getRuntimeStatus() {
     return status;
 }
 
+void recordActionQueued() {
+    platform_lock::ScopedLock lock(status_lock);
+    runtime_status.actionSequence++;
+    runtime_status.actionPending = true;
+    runtime_status.lastActionConfirmed = false;
+    runtime_status.lastActionAttempts = 0;
+    copyString(runtime_status.lastActionMessage,
+               sizeof(runtime_status.lastActionMessage),
+               "queued for CN105 confirmation");
+}
+
+void recordActionResult(bool confirmed, uint8_t attempts, const char* message) {
+    platform_lock::ScopedLock lock(status_lock);
+    runtime_status.actionPending = false;
+    runtime_status.lastActionConfirmed = confirmed;
+    runtime_status.lastActionAttempts = attempts;
+    copyString(runtime_status.lastActionMessage,
+               sizeof(runtime_status.lastActionMessage),
+               message == nullptr ? (confirmed ? "CN105 state confirmed" : "CN105 action failed") : message);
+}
+
 ProbeResult runProbe() {
     RunResult result{};
     ScriptContext ctx{.result = &result};
