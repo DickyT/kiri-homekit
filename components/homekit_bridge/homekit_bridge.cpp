@@ -46,10 +46,7 @@ constexpr uint8_t kTargetHeat = 1;
 constexpr uint8_t kTargetCool = 2;
 constexpr uint8_t kSwingDisabled = 0;
 constexpr uint8_t kSwingEnabled = 1;
-constexpr uint8_t kSlatFixed = 0;
-constexpr uint8_t kSlatSwinging = 2;
-constexpr uint8_t kHorizontalSlat = 0;
-constexpr uint8_t kVerticalSlat = 1;
+constexpr uint8_t kPositionStopped = 2;
 constexpr uint8_t kDisplayFahrenheit = 1;
 constexpr float kMinTargetCelsius = 10.0f;
 constexpr float kMaxTargetCelsius = 31.0f;
@@ -78,10 +75,12 @@ hap_char_t* temp_units_char = nullptr;
 hap_char_t* fan_active_char = nullptr;
 hap_char_t* fan_rotation_speed_char = nullptr;
 hap_char_t* fan_swing_mode_char = nullptr;
-hap_char_t* up_down_tilt_state_char = nullptr;
+hap_char_t* up_down_current_position_char = nullptr;
+hap_char_t* up_down_target_position_char = nullptr;
 hap_char_t* up_down_current_tilt_char = nullptr;
 hap_char_t* up_down_target_tilt_char = nullptr;
-hap_char_t* left_right_tilt_state_char = nullptr;
+hap_char_t* left_right_current_position_char = nullptr;
+hap_char_t* left_right_target_position_char = nullptr;
 hap_char_t* left_right_current_tilt_char = nullptr;
 hap_char_t* left_right_target_tilt_char = nullptr;
 hap_char_t* up_down_swing_on_char = nullptr;
@@ -316,8 +315,20 @@ bool leftRightSwingFromMock(const cn105_core::MockState& state) {
     return equals(state.wideVane, "SWING");
 }
 
-uint8_t slatState(bool swinging) {
-    return swinging ? kSlatSwinging : kSlatFixed;
+uint8_t positionFromTilt(int tilt) {
+    if (tilt < -90) {
+        tilt = -90;
+    } else if (tilt > 90) {
+        tilt = 90;
+    }
+    return static_cast<uint8_t>(((tilt + 90) * 100 + 90) / 180);
+}
+
+int tiltFromPosition(uint8_t position) {
+    if (position > 100) {
+        position = 100;
+    }
+    return static_cast<int>((static_cast<int>(position) * 180 + 50) / 100) - 90;
 }
 
 int horizontalTiltFromVane(const char* vane) {
@@ -491,9 +502,19 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         command->vane = vaneFromHorizontalTilt(value.i);
         return true;
     }
+    if (character == up_down_target_position_char) {
+        command->hasVane = true;
+        command->vane = vaneFromHorizontalTilt(tiltFromPosition(value.u));
+        return true;
+    }
     if (character == left_right_target_tilt_char) {
         command->hasWideVane = true;
         command->wideVane = wideVaneFromVerticalTilt(value.i);
+        return true;
+    }
+    if (character == left_right_target_position_char) {
+        command->hasWideVane = true;
+        command->wideVane = wideVaneFromVerticalTilt(tiltFromPosition(value.u));
         return true;
     }
     if (character == up_down_swing_on_char) {
@@ -748,11 +769,13 @@ esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
 esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
     const cn105_core::MockState state = cn105_core::getMockState();
     hap_serv_t*& service = up_down ? up_down_tilt_service : left_right_tilt_service;
-    hap_char_t*& state_char = up_down ? up_down_tilt_state_char : left_right_tilt_state_char;
     char* service_name = up_down ? up_down_tilt_service_name : left_right_tilt_service_name;
-    const bool swinging = up_down ? upDownSwingFromMock(state) : leftRightSwingFromMock(state);
+    const int target_tilt = up_down ? horizontalTiltFromVane(state.vane) : verticalTiltFromWideVane(state.wideVane);
+    const int current_tilt = up_down && equals(state.power, "OFF") ? -90 : target_tilt;
+    const uint8_t target_position = positionFromTilt(target_tilt);
+    const uint8_t current_position = positionFromTilt(current_tilt);
 
-    service = hap_serv_slat_create(slatState(swinging), up_down ? kHorizontalSlat : kVerticalSlat);
+    service = hap_serv_window_covering_create(target_position, current_position, kPositionStopped);
     if (service == nullptr) {
         setLastError("failed to create tilt service");
         return ESP_FAIL;
@@ -764,14 +787,11 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
                   up_down ? "Up/Down" : "Left/Right");
     int ret = addServiceNames(service, service_name);
     if (up_down) {
-        const int target_tilt = horizontalTiltFromVane(state.vane);
-        const int current_tilt = equals(state.power, "OFF") ? -90 : target_tilt;
         ret |= hap_serv_add_char(service, hap_char_current_horizontal_tilt_angle_create(current_tilt));
         ret |= hap_serv_add_char(service, hap_char_target_horizontal_tilt_angle_create(target_tilt));
     } else {
-        const int tilt = verticalTiltFromWideVane(state.wideVane);
-        ret |= hap_serv_add_char(service, hap_char_current_vertical_tilt_angle_create(tilt));
-        ret |= hap_serv_add_char(service, hap_char_target_vertical_tilt_angle_create(tilt));
+        ret |= hap_serv_add_char(service, hap_char_current_vertical_tilt_angle_create(current_tilt));
+        ret |= hap_serv_add_char(service, hap_char_target_vertical_tilt_angle_create(target_tilt));
     }
     if (ret != HAP_SUCCESS) {
         setLastError("failed to add tilt characteristics");
@@ -781,18 +801,23 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
     hap_serv_set_write_cb(service, advancedMappingWrite);
     hap_acc_add_serv(target_accessory, service);
 
-    state_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_SLAT_STATE);
     if (up_down) {
+        up_down_current_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_POSITION);
+        up_down_target_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_POSITION);
         up_down_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_HORIZONTAL_TILT_ANGLE);
         up_down_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_HORIZONTAL_TILT_ANGLE);
-        if (state_char == nullptr || up_down_current_tilt_char == nullptr || up_down_target_tilt_char == nullptr) {
+        if (up_down_current_position_char == nullptr || up_down_target_position_char == nullptr ||
+            up_down_current_tilt_char == nullptr || up_down_target_tilt_char == nullptr) {
             setLastError("up/down tilt characteristic lookup failed");
             return ESP_FAIL;
         }
     } else {
+        left_right_current_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_POSITION);
+        left_right_target_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_POSITION);
         left_right_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_VERTICAL_TILT_ANGLE);
         left_right_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_VERTICAL_TILT_ANGLE);
-        if (state_char == nullptr || left_right_current_tilt_char == nullptr || left_right_target_tilt_char == nullptr) {
+        if (left_right_current_position_char == nullptr || left_right_target_position_char == nullptr ||
+            left_right_current_tilt_char == nullptr || left_right_target_tilt_char == nullptr) {
             setLastError("left/right tilt characteristic lookup failed");
             return ESP_FAIL;
         }
@@ -994,13 +1019,16 @@ void syncFromMock() {
     updateCharUInt8(fan_swing_mode_char, swingFromMock(state));
     const bool up_down_swing = upDownSwingFromMock(state);
     const int up_down_target_tilt = horizontalTiltFromVane(state.vane);
-    updateCharUInt8(up_down_tilt_state_char, slatState(up_down_swing));
-    updateCharInt(up_down_current_tilt_char, equals(state.power, "OFF") ? -90 : up_down_target_tilt);
+    const int up_down_current_tilt = equals(state.power, "OFF") ? -90 : up_down_target_tilt;
+    updateCharUInt8(up_down_current_position_char, positionFromTilt(up_down_current_tilt));
+    updateCharUInt8(up_down_target_position_char, positionFromTilt(up_down_target_tilt));
+    updateCharInt(up_down_current_tilt_char, up_down_current_tilt);
     updateCharInt(up_down_target_tilt_char, up_down_target_tilt);
     updateCharBool(up_down_swing_on_char, up_down_swing);
     const bool left_right_swing = leftRightSwingFromMock(state);
     const int left_right_tilt = verticalTiltFromWideVane(state.wideVane);
-    updateCharUInt8(left_right_tilt_state_char, slatState(left_right_swing));
+    updateCharUInt8(left_right_current_position_char, positionFromTilt(left_right_tilt));
+    updateCharUInt8(left_right_target_position_char, positionFromTilt(left_right_tilt));
     updateCharInt(left_right_current_tilt_char, left_right_tilt);
     updateCharInt(left_right_target_tilt_char, left_right_tilt);
     updateCharBool(left_right_swing_on_char, left_right_swing);

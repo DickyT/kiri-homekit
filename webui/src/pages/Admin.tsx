@@ -87,8 +87,8 @@ const HK_MAP_LEFT_RIGHT_SWING = 1 << 3;
 const HK_MAP_KNOWN_MASK = HK_MAP_UP_DOWN_TILT | HK_MAP_LEFT_RIGHT_TILT | HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING;
 
 const HOMEKIT_MAPPING_OPTIONS = [
-  { bit: HK_MAP_UP_DOWN_TILT, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit slat service for the horizontal flap's fixed up/down position." },
-  { bit: HK_MAP_LEFT_RIGHT_TILT, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit slat service for the vertical vanes' fixed left/right position." },
+  { bit: HK_MAP_UP_DOWN_TILT, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the horizontal flap's fixed up/down position." },
+  { bit: HK_MAP_LEFT_RIGHT_TILT, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the vertical vanes' fixed left/right position." },
   { bit: HK_MAP_UP_DOWN_SWING, label: "Up/Down Swing Tile", detail: "Adds a HomeKit switch dedicated to horizontal flap oscillation." },
   { bit: HK_MAP_LEFT_RIGHT_SWING, label: "Left/Right Swing Tile", detail: "Adds a HomeKit switch dedicated to vertical vane oscillation." },
 ] as const;
