@@ -9,6 +9,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "device_settings.h"
 #include "nvs.h"
 #include "platform_lock.h"
 
@@ -30,6 +31,7 @@ constexpr const char* kEnabledKey = "enabled";
 constexpr const char* kKvNamespace = "lua_kv";
 constexpr size_t kArenaSize = 32 * 1024;
 constexpr int kInstructionLimit = 8000;
+constexpr int kApiVersion = 1;
 
 platform_lock::RecursiveMutex status_lock;
 lua_vm::RuntimeStatus runtime_status{};
@@ -250,47 +252,105 @@ int lStateCurrent(lua_State* L) {
 }
 
 int lAcSetPower(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TBOOLEAN);
     const bool on = lua_toboolean(L, 1);
     appendAction(L, lua_vm::ActionType::kSetPower, on ? "ON" : "OFF", on ? 1 : 0);
     return 0;
 }
 
 int lAcSetMode(lua_State* L) {
-    appendAction(L, lua_vm::ActionType::kSetMode, luaL_checkstring(L, 1), 0);
+    const char* mode = luaL_checkstring(L, 1);
+    const bool known = std::strcmp(mode, "AUTO") == 0 || std::strcmp(mode, "HEAT") == 0 ||
+        std::strcmp(mode, "COOL") == 0 || std::strcmp(mode, "DRY") == 0 ||
+        std::strcmp(mode, "FAN") == 0;
+    if (!known) {
+        return luaL_error(L, "ac.set_mode: expected AUTO, HEAT, COOL, DRY, or FAN");
+    }
+    const uint32_t capabilities = device_settings::acCapabilities();
+    if ((std::strcmp(mode, "AUTO") == 0 && (capabilities & device_settings::kAcCapabilityTargetAuto) == 0) ||
+        (std::strcmp(mode, "HEAT") == 0 && (capabilities & device_settings::kAcCapabilityTargetHeat) == 0) ||
+        (std::strcmp(mode, "COOL") == 0 && (capabilities & device_settings::kAcCapabilityTargetCool) == 0)) {
+        return luaL_error(L, "ac.set_mode: %s is disabled in AC Capabilities", mode);
+    }
+    appendAction(L, lua_vm::ActionType::kSetMode, mode, 0);
     return 0;
 }
 
 int lAcSetTargetTemp(lua_State* L) {
     const int temp_f = static_cast<int>(luaL_checkinteger(L, 1));
+    if (temp_f < 50 || temp_f > 88) {
+        return luaL_error(L, "ac.set_target_temp_f: expected 50..88 F");
+    }
     appendAction(L, lua_vm::ActionType::kSetTargetTemperatureF, nullptr, temp_f);
     return 0;
 }
 
 int lAcSetFan(lua_State* L) {
+    const char* value = nullptr;
+    char fan[8] = {};
     if (lua_isinteger(L, 1)) {
-        char fan[8] = {};
-        std::snprintf(fan, sizeof(fan), "%d", static_cast<int>(lua_tointeger(L, 1)));
-        appendAction(L, lua_vm::ActionType::kSetFan, fan, 0);
+        const int level = static_cast<int>(lua_tointeger(L, 1));
+        if (level < 1 || level > 4) {
+            return luaL_error(L, "ac.set_fan: numeric level must be 1..4");
+        }
+        std::snprintf(fan, sizeof(fan), "%d", level);
+        value = fan;
     } else {
-        appendAction(L, lua_vm::ActionType::kSetFan, luaL_checkstring(L, 1), 0);
+        value = luaL_checkstring(L, 1);
+        if (std::strcmp(value, "AUTO") != 0 && std::strcmp(value, "QUIET") != 0 &&
+            std::strcmp(value, "1") != 0 && std::strcmp(value, "2") != 0 &&
+            std::strcmp(value, "3") != 0 && std::strcmp(value, "4") != 0) {
+            return luaL_error(L, "ac.set_fan: expected AUTO, QUIET, or 1..4");
+        }
     }
+    appendAction(L, lua_vm::ActionType::kSetFan, value, 0);
     return 0;
 }
 
 int lAcSetVane(lua_State* L) {
-    appendAction(L, lua_vm::ActionType::kSetVane, luaL_checkstring(L, 1), 0);
+    if (!device_settings::supportsUpDownAirflow()) {
+        return luaL_error(L, "ac.set_up_down_airflow: disabled in AC Capabilities");
+    }
+    const char* value = luaL_checkstring(L, 1);
+    const bool valid = std::strcmp(value, "AUTO") == 0 || std::strcmp(value, "SWING") == 0 ||
+        (value[0] >= '1' && value[0] <= '5' && value[1] == '\0');
+    if (!valid) {
+        return luaL_error(L, "ac.set_up_down_airflow: expected AUTO, SWING, or 1..5");
+    }
+    appendAction(L, lua_vm::ActionType::kSetVane, value, 0);
     return 0;
 }
 
 int lAcSetWideVane(lua_State* L) {
-    appendAction(L, lua_vm::ActionType::kSetWideVane, luaL_checkstring(L, 1), 0);
+    if (!device_settings::supportsLeftRightAirflow()) {
+        return luaL_error(L, "ac.set_left_right_airflow: disabled in AC Capabilities");
+    }
+    const char* value = luaL_checkstring(L, 1);
+    const bool valid = std::strcmp(value, "<<") == 0 || std::strcmp(value, "<") == 0 ||
+        std::strcmp(value, "|") == 0 || std::strcmp(value, ">") == 0 ||
+        std::strcmp(value, ">>") == 0 || std::strcmp(value, "<>") == 0 ||
+        std::strcmp(value, "SWING") == 0 || std::strcmp(value, "AIRFLOW CONTROL") == 0;
+    if (!valid) {
+        return luaL_error(L, "ac.set_left_right_airflow: expected <<, <, |, >, >>, <>, SWING, or AIRFLOW CONTROL");
+    }
+    appendAction(L, lua_vm::ActionType::kSetWideVane, value, 0);
     return 0;
 }
 
 int lAcSetSwing(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TBOOLEAN);
     const bool swing = lua_toboolean(L, 1);
-    appendAction(L, lua_vm::ActionType::kSetVane, swing ? "SWING" : "AUTO", 0);
-    appendAction(L, lua_vm::ActionType::kSetWideVane, swing ? "SWING" : "|", 0);
+    const bool up_down = device_settings::supportsUpDownAirflow();
+    const bool left_right = device_settings::supportsLeftRightAirflow();
+    if (!up_down && !left_right) {
+        return luaL_error(L, "ac.set_swing: no airflow axes are enabled in AC Capabilities");
+    }
+    if (up_down) {
+        appendAction(L, lua_vm::ActionType::kSetVane, swing ? "SWING" : "AUTO", 0);
+    }
+    if (left_right) {
+        appendAction(L, lua_vm::ActionType::kSetWideVane, swing ? "SWING" : "|", 0);
+    }
     return 0;
 }
 
@@ -424,6 +484,24 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     lua_createtable(L, 0, 1);
     setFunction(L, "current", lStateCurrent, ctx);
     lua_setglobal(L, "state");
+
+    lua_createtable(L, 0, 2);
+    lua_pushinteger(L, kApiVersion);
+    lua_setfield(L, -2, "api_version");
+    lua_createtable(L, 0, 5);
+    const uint32_t capabilities = device_settings::acCapabilities();
+    lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetAuto) != 0);
+    lua_setfield(L, -2, "auto_mode");
+    lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetHeat) != 0);
+    lua_setfield(L, -2, "heat_mode");
+    lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetCool) != 0);
+    lua_setfield(L, -2, "cool_mode");
+    lua_pushboolean(L, device_settings::supportsUpDownAirflow());
+    lua_setfield(L, -2, "up_down_airflow");
+    lua_pushboolean(L, device_settings::supportsLeftRightAirflow());
+    lua_setfield(L, -2, "left_right_airflow");
+    lua_setfield(L, -2, "capabilities");
+    lua_setglobal(L, "kiri");
 
     lua_createtable(L, 0, 8);
     setFunction(L, "set_power", lAcSetPower, ctx);

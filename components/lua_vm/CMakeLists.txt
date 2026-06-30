@@ -35,6 +35,7 @@ idf_component_register(
         "${LUA_SRC_DIR}"
     PRIV_REQUIRES
         core_cn105
+        device_settings
         log
         nvs_flash
         platform_lock
