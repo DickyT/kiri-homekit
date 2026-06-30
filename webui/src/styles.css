@@ -1249,6 +1249,93 @@ nav.tabs .tab-button svg {
   border-color: var(--accent)
 }
 
+.capability-group {
+  margin-top: 20px
+}
+
+.capability-group-heading {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px
+}
+
+.capability-group-heading strong {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase
+}
+
+.capability-group-heading span {
+  color: var(--muted);
+  font-size: 13px
+}
+
+.capability-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px
+}
+
+.capability-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #090909;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease
+}
+
+.capability-option:hover {
+  border-color: #626262
+}
+
+.capability-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, #090909)
+}
+
+.capability-option.locked {
+  cursor: default
+}
+
+.capability-option input {
+  flex: 0 0 auto;
+  margin-top: 3px
+}
+
+.capability-option-copy {
+  display: grid;
+  gap: 5px
+}
+
+.capability-option-copy strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500
+}
+
+.capability-option-copy>span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45
+}
+
+.capability-result {
+  margin-top: 18px
+}
+
+@media (max-width: 680px) {
+  .capability-options {
+    grid-template-columns: 1fr
+  }
+}
+
 /* Responsive */
 @media(min-width:760px) {
   body {

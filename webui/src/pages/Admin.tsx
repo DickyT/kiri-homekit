@@ -71,9 +71,9 @@ const CN105_ADVANCED_KEYS = [
 ] as const;
 
 const HVAC_TARGET_OPTIONS = [
-  { value: "0", bit: 1 << 0, label: "Auto", detail: "Target value 0" },
-  { value: "1", bit: 1 << 1, label: "Heat", detail: "Target value 1" },
-  { value: "2", bit: 1 << 2, label: "Cool", detail: "Target value 2" },
+  { value: "0", bit: 1 << 0, label: "Auto mode", detail: "The AC can automatically choose between heating and cooling." },
+  { value: "1", bit: 1 << 1, label: "Heating", detail: "The AC can heat the room." },
+  { value: "2", bit: 1 << 2, label: "Cooling", detail: "The AC can cool the room." },
 ] as const;
 const AC_CAP_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2);
 const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
@@ -217,28 +217,12 @@ function hvacModeSetFromCapabilities(caps: number): Set<string> {
   return selected;
 }
 
-function hvacModeSummary(caps: number): string {
-  const selected = hvacModeSetFromCapabilities(caps);
-  return HVAC_TARGET_OPTIONS
-    .filter((o) => selected.has(o.value))
-    .map((o) => `${o.label} (${o.value})`)
-    .join(", ");
-}
-
 function hvacModeCompactSummary(caps: number): string {
   const selected = hvacModeSetFromCapabilities(caps);
   return HVAC_TARGET_OPTIONS
     .filter((o) => selected.has(o.value))
-    .map((o) => o.label)
+    .map((o) => o.label.replace(" mode", "").replace("ing", ""))
     .join(" / ");
-}
-
-function hvacCurrentSummary(caps: number): string {
-  const selected = hvacModeSetFromCapabilities(caps);
-  const current = ["Inactive (0)", "Idle (1)"];
-  if (selected.has("0") || selected.has("1")) current.push("Heating (2)");
-  if (selected.has("0") || selected.has("2")) current.push("Cooling (3)");
-  return current.join(", ");
 }
 
 function airflowSummary(caps: number): string {
@@ -246,6 +230,25 @@ function airflowSummary(caps: number): string {
   if ((caps & AC_CAP_UP_DOWN_AIRFLOW) !== 0) names.push("Up/Down");
   if ((caps & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0) names.push("Left/Right");
   return names.length ? names.join(" + ") : "Hidden";
+}
+
+function acCapabilitiesDescription(caps: number): string {
+  const modes = HVAC_TARGET_OPTIONS
+    .filter((option) => (caps & option.bit) !== 0)
+    .map((option) => option.label.toLowerCase());
+  const airflow = [];
+  if ((caps & AC_CAP_UP_DOWN_AIRFLOW) !== 0) airflow.push("up/down airflow");
+  if ((caps & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0) airflow.push("left/right airflow");
+
+  const modeText = modes.length === 1
+    ? modes[0]
+    : `${modes.slice(0, -1).join(", ")} and ${modes[modes.length - 1]}`;
+  const airflowText = airflow.length === 0
+    ? "no adjustable airflow controls"
+    : airflow.length === 1
+      ? airflow[0]
+      : `${airflow[0]} and ${airflow[1]}`;
+  return `Kiri will expose ${modeText}, with ${airflowText}.`;
 }
 
 function acCapabilitiesSummary(value: string | undefined): string {
@@ -354,6 +357,8 @@ export function AdminPage(): JSX.Element {
   const rebootTimer = useRef<number | undefined>(undefined);
   const otaInputRef = useRef<HTMLInputElement>(null);
   const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
+  const capabilitiesHvacChanged = capabilitiesSnapshot !== null
+    && ((normalizeAcCapabilities(capabilitiesSnapshot) ^ currentAcCapabilities) & AC_CAP_TARGET_MASK) !== 0;
   const currentHomeKitMapping = normalizeHomeKitMapping(settings["cfg-homekit-advanced-mapping"]);
   let effectiveHomeKitMapping = 0;
   if ((currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0) {
@@ -928,67 +933,64 @@ export function AdminPage(): JSX.Element {
         open={capabilitiesOpen}
         onClose={() => closeCapabilities(false)}
         title="AC Capabilities"
-        subtitle="Describe what this indoor unit supports. Kiri hides unsupported Web UI controls and advertises selected HomeKit modes."
+        subtitle="Tell Kiri what this indoor unit can do. Unsupported controls will be hidden."
         size="wide"
       >
-        <div class="danger-banner">
-          <strong>Apple Home cache</strong>
-          If you change HomeKit HVAC modes, save and reboot first, then remove and re-add the accessory in Apple Home. Airflow-only changes just update the Web UI. You do not need to reset HomeKit inside Kiri Bridge.
-        </div>
-        <div class="subtitle" style={{ marginTop: "14px" }}>HomeKit HVAC Modes</div>
-        <div class="grid2">
+        <div class="capability-group">
+          <div class="capability-group-heading">
+            <strong>Operating modes</strong>
+            <span>Select every mode available on the Mitsubishi remote.</span>
+          </div>
+          <div class="capability-options">
           {HVAC_TARGET_OPTIONS.map((option) => {
             const checked = (currentAcCapabilities & option.bit) !== 0;
             const disabled = checked && (currentAcCapabilities & AC_CAP_TARGET_MASK) === option.bit;
             return (
-              <Field key={option.value} label={option.label}>
-                <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={disabled}
-                    onChange={() => toggleHvacMode(option.bit)}
-                  />
+              <label class={`capability-option${checked ? " selected" : ""}${disabled ? " locked" : ""}`} key={option.value}>
+                <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggleHvacMode(option.bit)} />
+                <span class="capability-option-copy">
+                  <strong>{option.label}</strong>
                   <span>{option.detail}</span>
-                </label>
-              </Field>
+                </span>
+              </label>
             );
           })}
+          </div>
         </div>
-        <div class="subtitle" style={{ marginTop: "14px" }}>Airflow Controls</div>
-        <div class="grid2">
-          <Field label="Up/Down Airflow">
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
-              <input
-                type="checkbox"
-                checked={(currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0}
-                onChange={() => toggleCapability(AC_CAP_UP_DOWN_AIRFLOW)}
-              />
-              <span>Horizontal flap control in the Web UI</span>
+        <div class="capability-group">
+          <div class="capability-group-heading">
+            <strong>Airflow direction</strong>
+            <span>Select only the directions this indoor unit can adjust.</span>
+          </div>
+          <div class="capability-options">
+            <label class={`capability-option${(currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0 ? " selected" : ""}`}>
+              <input type="checkbox" checked={(currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0} onChange={() => toggleCapability(AC_CAP_UP_DOWN_AIRFLOW)} />
+              <span class="capability-option-copy">
+                <strong>Up/Down airflow</strong>
+                <span>The horizontal flap can direct air toward the ceiling or floor.</span>
+              </span>
             </label>
-          </Field>
-          <Field label="Left/Right Airflow">
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", minHeight: "42px" }}>
-              <input
-                type="checkbox"
-                checked={(currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0}
-                onChange={() => toggleCapability(AC_CAP_LEFT_RIGHT_AIRFLOW)}
-              />
-              <span>Vertical vane control in the Web UI</span>
+            <label class={`capability-option${(currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0 ? " selected" : ""}`}>
+              <input type="checkbox" checked={(currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0} onChange={() => toggleCapability(AC_CAP_LEFT_RIGHT_AIRFLOW)} />
+              <span class="capability-option-copy">
+                <strong>Left/Right airflow</strong>
+                <span>The vertical vanes can direct air toward either side of the room.</span>
+              </span>
             </label>
-          </Field>
+          </div>
         </div>
-        <div class="subtitle" style={{ marginTop: "14px" }}>
-          Target values: {hvacModeSummary(currentAcCapabilities)}
-        </div>
-        <div class="subtitle" style={{ marginTop: "8px" }}>
-          Current values exposed: {hvacCurrentSummary(currentAcCapabilities)}
-        </div>
-        <div class="subtitle" style={{ marginTop: "8px" }}>
-          Web airflow controls: {airflowSummary(currentAcCapabilities)}
+        {capabilitiesHvacChanged && (
+          <div class="danger-banner">
+            <strong>Apple Home update required</strong>
+            After Save and Reboot, remove and re-add Kiri Bridge in Apple Home so it reloads the available modes. Do not reset HomeKit inside Kiri Bridge.
+          </div>
+        )}
+        <div class="info-banner capability-result">
+          <strong>Selected capabilities</strong>
+          {acCapabilitiesDescription(currentAcCapabilities)}
         </div>
         <div class="modal-actions">
-          <Btn variant="primary" onClick={() => closeCapabilities(true)}>Confirm</Btn>
+          <Btn variant="primary" onClick={() => closeCapabilities(true)}>Confirm Capabilities</Btn>
           <Btn onClick={() => closeCapabilities(false)}>Cancel</Btn>
         </div>
       </Modal>
