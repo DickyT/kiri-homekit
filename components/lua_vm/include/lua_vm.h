@@ -9,6 +9,9 @@ namespace lua_vm {
 
 inline constexpr size_t kMaxActions = 4;
 inline constexpr size_t kMaxScriptBytes = 12 * 1024;
+inline constexpr uint8_t kHookStateChanged = 1 << 0;
+inline constexpr uint8_t kHookPowerOn = 1 << 1;
+inline constexpr uint8_t kHookPowerOff = 1 << 2;
 
 enum class ActionType {
     kNone,
@@ -43,6 +46,14 @@ struct ProbeResult {
     const char* message;
 };
 
+struct ValidationResult {
+    bool ok = false;
+    bool instructionLimitHit = false;
+    uint8_t hookMask = 0;
+    size_t peakBytes = 0;
+    char message[128] = "";
+};
+
 struct RuntimeStatus {
     bool enabled = false;
     bool scriptExists = false;
@@ -64,6 +75,8 @@ const char* scriptLogicalPath();
 const char* scriptPhysicalPath();
 bool isEnabled();
 bool setEnabled(bool enabled, char* error, size_t error_len);
+ValidationResult validateScript(const char* script, size_t scriptSize);
+bool saveScript(const char* script, size_t scriptSize, ValidationResult* validation);
 RuntimeStatus getRuntimeStatus();
 ProbeResult runProbe();
 RunResult runHook(const char* hookName,

@@ -1358,11 +1358,15 @@ esp_err_t automationScriptPutHandler(httpd_req_t* req) {
     }
 
     char message[128] = {};
-    platform_fs::createDirectory("/scripts", message, sizeof(message));
-    const bool ok = platform_fs::createFile(lua_vm::scriptLogicalPath(), body, body_len, message, sizeof(message));
+    if (!platform_fs::createDirectory("/scripts", message, sizeof(message))) {
+        std::free(body);
+        return web_http::sendJsonError(req, message);
+    }
+    lua_vm::ValidationResult validation{};
+    const bool ok = lua_vm::saveScript(body, body_len, &validation);
     std::free(body);
     if (!ok) {
-        return web_http::sendJsonError(req, message);
+        return web_http::sendJsonError(req, validation.message);
     }
 
     const std::string status = automationStatusJson();

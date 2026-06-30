@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <unistd.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -21,6 +23,8 @@ namespace {
 constexpr const char* TAG = "lua_vm";
 constexpr const char* kScriptLogicalPath = "/scripts/automation.lua";
 constexpr const char* kScriptPhysicalPath = "/spiffs/scripts/automation.lua";
+constexpr const char* kScriptTempPhysicalPath = "/spiffs/scripts/automation.tmp";
+constexpr const char* kScriptBackupPhysicalPath = "/spiffs/scripts/automation.last-good.lua";
 constexpr const char* kConfigNamespace = "lua_cfg";
 constexpr const char* kEnabledKey = "enabled";
 constexpr const char* kKvNamespace = "lua_kv";
@@ -43,7 +47,10 @@ struct BlockHeader {
 struct ScriptContext {
     lua_vm::RunResult* result = nullptr;
     int instructionsLeft = kInstructionLimit;
+    bool validationOnly = false;
 };
+
+void destroyLua(lua_State* L, Arena* arena);
 
 void copyString(char* out, size_t out_len, const char* value) {
     if (out == nullptr || out_len == 0) {
@@ -343,6 +350,12 @@ int lKvSet(lua_State* L) {
         copyString(value, sizeof(value), luaL_checkstring(L, 2));
     }
 
+    ScriptContext* ctx = context(L);
+    if (ctx != nullptr && ctx->validationOnly) {
+        lua_pushboolean(L, true);
+        return 1;
+    }
+
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open(kKvNamespace, NVS_READWRITE, &handle);
     if (err == ESP_OK) {
@@ -357,18 +370,30 @@ int lKvSet(lua_State* L) {
 }
 
 int lLogInfo(lua_State* L) {
+    ScriptContext* ctx = context(L);
+    if (ctx != nullptr && ctx->validationOnly) {
+        return 0;
+    }
     ESP_LOGI(TAG, "script: %s", luaL_tolstring(L, 1, nullptr));
     lua_pop(L, 1);
     return 0;
 }
 
 int lLogWarn(lua_State* L) {
+    ScriptContext* ctx = context(L);
+    if (ctx != nullptr && ctx->validationOnly) {
+        return 0;
+    }
     ESP_LOGW(TAG, "script: %s", luaL_tolstring(L, 1, nullptr));
     lua_pop(L, 1);
     return 0;
 }
 
 int lPrint(lua_State* L) {
+    ScriptContext* ctx = context(L);
+    if (ctx != nullptr && ctx->validationOnly) {
+        return 0;
+    }
     const int n = lua_gettop(L);
     char line[160] = {};
     size_t offset = 0;
@@ -456,6 +481,140 @@ bool createLua(lua_State** out, Arena** arena_out, ScriptContext* ctx) {
     return true;
 }
 
+uint8_t discoverHooks(lua_State* L) {
+    struct Hook {
+        const char* name;
+        uint8_t bit;
+    };
+    constexpr Hook hooks[] = {
+        {"on_state_changed", lua_vm::kHookStateChanged},
+        {"on_power_on", lua_vm::kHookPowerOn},
+        {"on_power_off", lua_vm::kHookPowerOff},
+    };
+
+    uint8_t mask = 0;
+    for (const Hook& hook : hooks) {
+        lua_getglobal(L, hook.name);
+        if (lua_isfunction(L, -1)) {
+            mask |= hook.bit;
+        }
+        lua_pop(L, 1);
+    }
+    return mask;
+}
+
+lua_vm::ValidationResult validateScriptBuffer(const char* script, size_t script_size) {
+    lua_vm::ValidationResult validation{};
+    if (script == nullptr || script_size == 0) {
+        copyString(validation.message, sizeof(validation.message), "script is empty");
+        return validation;
+    }
+    if (script_size > lua_vm::kMaxScriptBytes) {
+        copyString(validation.message, sizeof(validation.message), "script is too large");
+        return validation;
+    }
+
+    lua_vm::RunResult run{};
+    ScriptContext ctx{.result = &run, .instructionsLeft = kInstructionLimit, .validationOnly = true};
+    Arena* arena = nullptr;
+    lua_State* L = nullptr;
+    if (!createLua(&L, &arena, &ctx)) {
+        copyString(validation.message, sizeof(validation.message), "lua_newstate failed");
+        return validation;
+    }
+
+    registerApi(L, &ctx, cn105_core::MockState{});
+    int rc = luaL_loadbuffer(L, script, script_size, "automation.lua");
+    if (rc == LUA_OK) {
+        rc = lua_pcall(L, 0, 0, 0);
+    }
+    validation.instructionLimitHit = run.instructionLimitHit;
+    validation.peakBytes = arena != nullptr ? arena->peak : 0;
+    if (rc != LUA_OK) {
+        copyString(validation.message, sizeof(validation.message), lua_tostring(L, -1));
+        destroyLua(L, arena);
+        return validation;
+    }
+
+    validation.hookMask = discoverHooks(L);
+    if (validation.hookMask == 0) {
+        copyString(validation.message, sizeof(validation.message),
+                   "define on_state_changed, on_power_on, or on_power_off");
+        destroyLua(L, arena);
+        return validation;
+    }
+
+    validation.ok = true;
+    copyString(validation.message, sizeof(validation.message), "ok");
+    destroyLua(L, arena);
+    return validation;
+}
+
+bool readFile(const char* path, std::string* content) {
+    if (path == nullptr || content == nullptr) {
+        return false;
+    }
+    FILE* file = std::fopen(path, "rb");
+    if (file == nullptr) {
+        return false;
+    }
+    if (std::fseek(file, 0, SEEK_END) != 0) {
+        std::fclose(file);
+        return false;
+    }
+    const long end = std::ftell(file);
+    if (end <= 0 || static_cast<size_t>(end) > lua_vm::kMaxScriptBytes ||
+        std::fseek(file, 0, SEEK_SET) != 0) {
+        std::fclose(file);
+        return false;
+    }
+    content->resize(static_cast<size_t>(end));
+    const size_t read = std::fread(content->data(), 1, content->size(), file);
+    std::fclose(file);
+    return read == content->size();
+}
+
+lua_vm::ValidationResult validateScriptFile(const char* path) {
+    std::string script;
+    if (!readFile(path, &script)) {
+        lua_vm::ValidationResult result{};
+        copyString(result.message, sizeof(result.message), "script not found or unreadable");
+        return result;
+    }
+    return validateScriptBuffer(script.data(), script.size());
+}
+
+bool writeFileSynced(const char* path, const char* content, size_t content_size) {
+    FILE* file = std::fopen(path, "wb");
+    if (file == nullptr) {
+        return false;
+    }
+    const size_t written = std::fwrite(content, 1, content_size, file);
+    const bool flushed = std::fflush(file) == 0;
+    const bool synced = flushed && fsync(fileno(file)) == 0;
+    const bool closed = std::fclose(file) == 0;
+    return written == content_size && flushed && synced && closed;
+}
+
+bool copyFileSynced(const char* source, const char* destination) {
+    std::string content;
+    return readFile(source, &content) && writeFileSynced(destination, content.data(), content.size());
+}
+
+bool restoreBackupIfValid(char* message, size_t message_len) {
+    const lua_vm::ValidationResult backup = validateScriptFile(kScriptBackupPhysicalPath);
+    if (!backup.ok || !copyFileSynced(kScriptBackupPhysicalPath, kScriptTempPhysicalPath)) {
+        return false;
+    }
+    std::remove(kScriptPhysicalPath);
+    if (std::rename(kScriptTempPhysicalPath, kScriptPhysicalPath) != 0) {
+        std::remove(kScriptTempPhysicalPath);
+        return false;
+    }
+    setErrorMessage(message, message_len, "restored last-known-good script");
+    return true;
+}
+
 void destroyLua(lua_State* L, Arena* arena) {
     if (L != nullptr) {
         lua_close(L);
@@ -501,6 +660,24 @@ bool isEnabled() {
 }
 
 bool setEnabled(bool enabled, char* error, size_t error_len) {
+    if (enabled) {
+        lua_vm::ValidationResult validation = validateScriptFile(kScriptPhysicalPath);
+        if (!validation.ok) {
+            char recovery[96] = {};
+            if (!restoreBackupIfValid(recovery, sizeof(recovery))) {
+                char message[160] = {};
+                std::snprintf(message, sizeof(message), "script validation failed: %s", validation.message);
+                setErrorMessage(error, error_len, message);
+                return false;
+            }
+            validation = validateScriptFile(kScriptPhysicalPath);
+            if (!validation.ok) {
+                setErrorMessage(error, error_len, "last-known-good script validation failed");
+                return false;
+            }
+        }
+    }
+
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open(kConfigNamespace, NVS_READWRITE, &handle);
     if (err == ESP_OK) {
@@ -519,6 +696,56 @@ bool setEnabled(bool enabled, char* error, size_t error_len) {
     runtime_status.enabled = enabled;
     refreshScriptInfoLocked(&runtime_status);
     setErrorMessage(error, error_len, "ok");
+    return true;
+}
+
+ValidationResult validateScript(const char* script, size_t scriptSize) {
+    return validateScriptBuffer(script, scriptSize);
+}
+
+bool saveScript(const char* script, size_t scriptSize, ValidationResult* validation) {
+    ValidationResult checked = validateScriptBuffer(script, scriptSize);
+    if (validation != nullptr) {
+        *validation = checked;
+    }
+    if (!checked.ok || !writeFileSynced(kScriptTempPhysicalPath, script, scriptSize)) {
+        if (checked.ok && validation != nullptr) {
+            validation->ok = false;
+            copyString(validation->message, sizeof(validation->message), "temporary script write failed");
+        }
+        std::remove(kScriptTempPhysicalPath);
+        return false;
+    }
+
+    const ValidationResult current = validateScriptFile(kScriptPhysicalPath);
+    if (current.ok) {
+        std::remove(kScriptBackupPhysicalPath);
+        if (std::rename(kScriptPhysicalPath, kScriptBackupPhysicalPath) != 0) {
+            std::remove(kScriptTempPhysicalPath);
+            if (validation != nullptr) {
+                validation->ok = false;
+                copyString(validation->message, sizeof(validation->message), "failed to preserve current script");
+            }
+            return false;
+        }
+    } else {
+        std::remove(kScriptPhysicalPath);
+    }
+
+    if (std::rename(kScriptTempPhysicalPath, kScriptPhysicalPath) != 0) {
+        std::remove(kScriptTempPhysicalPath);
+        if (current.ok) {
+            std::rename(kScriptBackupPhysicalPath, kScriptPhysicalPath);
+        }
+        if (validation != nullptr) {
+            validation->ok = false;
+            copyString(validation->message, sizeof(validation->message), "failed to activate validated script");
+        }
+        return false;
+    }
+
+    platform_lock::ScopedLock lock(status_lock);
+    refreshScriptInfoLocked(&runtime_status);
     return true;
 }
 
