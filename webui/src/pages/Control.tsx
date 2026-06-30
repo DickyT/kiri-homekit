@@ -210,13 +210,13 @@ export function ControlPage(): JSX.Element {
         {supportsLeftRightAirflow && (
           <Field label="Left/Right Airflow (Vertical Vanes)">
             <select value={form.wide} disabled={busy} onChange={(e) => update("wide", (e.target as HTMLSelectElement).value)}>
-              <option value="|">Center</option>
-              <option value="<<">Far Left</option>
-              <option value="<">Left</option>
-              <option value=">">Right</option>
-              <option value=">>">Far Right</option>
-              <option value="<>">Wide</option>
-              <option value="SWING">SWING</option>
+              <option value="|">Center (|)</option>
+              <option value="<<">Far Left (&lt;&lt;)</option>
+              <option value="<">Left (&lt;)</option>
+              <option value=">">Right (&gt;)</option>
+              <option value=">>">Far Right (&gt;&gt;)</option>
+              <option value="<>">Wide (&lt;&gt;)</option>
+              <option value="SWING">Swing (SWING)</option>
             </select>
           </Field>
         )}

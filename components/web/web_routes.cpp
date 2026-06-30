@@ -845,7 +845,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
     return err;
 }
 
-esp_err_t cn105MockStatusHandler(httpd_req_t* req) {
+esp_err_t cn105StateHandler(httpd_req_t* req) {
     const cn105_core::MockState mock = cn105_core::getMockState();
     char mock_json[768] = {};
     writeMockStateJson(mock, mock_json, sizeof(mock_json));
@@ -1464,10 +1464,10 @@ const web_http::Route ROUTES[] = {
     { "/api/automation/script", HTTP_PUT, automationScriptPutHandler },
     { "/api/automation/script", HTTP_DELETE, automationScriptDeleteHandler },
     { "/api/automation/enabled", HTTP_POST, automationEnabledHandler },
-    { "/api/cn105/mock/status", HTTP_GET, cn105MockStatusHandler },
+    { "/api/cn105/state", HTTP_GET, cn105StateHandler },
     { "/api/cn105/refresh", HTTP_POST, cn105RefreshHandler },
-    { "/api/cn105/mock/build-set", HTTP_GET, cn105BuildSetHandler },
-    { "/api/cn105/mock/build-set", HTTP_POST, cn105BuildSetHandler },
+    { "/api/cn105/build-set", HTTP_GET, cn105BuildSetHandler },
+    { "/api/cn105/build-set", HTTP_POST, cn105BuildSetHandler },
     { "/api/cn105/decode", HTTP_GET, cn105DecodeHandler },
 };
 

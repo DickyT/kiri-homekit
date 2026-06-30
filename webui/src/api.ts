@@ -17,7 +17,7 @@ export const api = {
   refreshCn105: () => jsonFetch<Status & { error?: string }>("/api/cn105/refresh", { method: "POST" }),
   buildSet: (params: URLSearchParams) =>
     jsonFetch<{ ok: boolean; mock_state?: import("./types").Cn105MockState; error?: string }>(
-      "/api/cn105/mock/build-set?" + params.toString(),
+      "/api/cn105/build-set?" + params.toString(),
       { method: "POST" }
     ),
   reboot: () => jsonFetch<{ ok: boolean }>("/api/reboot", { method: "POST" }),
