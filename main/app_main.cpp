@@ -22,6 +22,7 @@
 #include "esp_err.h"
 #include "esp_flash.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "homekit_bridge.h"
@@ -37,7 +38,152 @@ static const char* TAG = "bootstrap";
 
 namespace {
 
+constexpr size_t kAutomationPendingTargets = 4;
+constexpr size_t kAutomationBurstLimit = 6;
+constexpr int64_t kAutomationTargetLifetimeUs = 15LL * 1000 * 1000;
+constexpr int64_t kAutomationBurstWindowUs = 60LL * 1000 * 1000;
+constexpr uint8_t kAutomationErrorLimit = 3;
+
+struct AutomationTarget {
+    bool active = false;
+    int64_t expiresAtUs = 0;
+    bool hasPower = false;
+    char power[16] = {};
+    bool hasMode = false;
+    char mode[16] = {};
+    bool hasTemperatureF = false;
+    int temperatureF = 0;
+    bool hasFan = false;
+    char fan[16] = {};
+    bool hasVane = false;
+    char vane[16] = {};
+    bool hasWideVane = false;
+    char wideVane[32] = {};
+};
+
+AutomationTarget automation_targets[kAutomationPendingTargets]{};
+int64_t automation_action_times[kAutomationBurstLimit]{};
+size_t automation_action_time_count = 0;
+uint8_t automation_consecutive_errors = 0;
+
+bool equals(const char* left, const char* right) {
+    return left != nullptr && right != nullptr && std::strcmp(left, right) == 0;
+}
+
+void disableAutomation(const char* reason) {
+    char error[96] = {};
+    if (!lua_vm::setEnabled(false, error, sizeof(error))) {
+        ESP_LOGE(TAG, "Failed disabling Lua automation after %s: %s", reason, error);
+        return;
+    }
+    ESP_LOGE(TAG, "Lua automation disabled: %s", reason);
+}
+
+void noteAutomationFailure(const char* reason) {
+    if (automation_consecutive_errors < UINT8_MAX) {
+        automation_consecutive_errors++;
+    }
+    if (automation_consecutive_errors >= kAutomationErrorLimit) {
+        disableAutomation(reason);
+        automation_consecutive_errors = 0;
+    }
+}
+
+bool allowAutomationActionBatch() {
+    const int64_t now = esp_timer_get_time();
+    size_t kept = 0;
+    for (size_t i = 0; i < automation_action_time_count; ++i) {
+        if (now - automation_action_times[i] < kAutomationBurstWindowUs) {
+            automation_action_times[kept++] = automation_action_times[i];
+        }
+    }
+    automation_action_time_count = kept;
+    if (automation_action_time_count >= kAutomationBurstLimit) {
+        disableAutomation("more than 6 action batches in 60 seconds");
+        automation_action_time_count = 0;
+        return false;
+    }
+    automation_action_times[automation_action_time_count++] = now;
+    return true;
+}
+
+bool commandHasChanges(const cn105_core::SetCommand& command) {
+    return command.hasPower || command.hasMode || command.hasTemperatureF || command.hasFan ||
+           command.hasVane || command.hasWideVane;
+}
+
+void removeNoOpFields(const cn105_core::MockState& state, cn105_core::SetCommand* command) {
+    if (command == nullptr) {
+        return;
+    }
+    if (command->hasPower && equals(command->power, state.power)) command->hasPower = false;
+    if (command->hasMode && equals(command->mode, state.mode)) command->hasMode = false;
+    if (command->hasTemperatureF && command->temperatureF == state.targetTemperatureF) command->hasTemperatureF = false;
+    if (command->hasFan && equals(command->fan, state.fan)) command->hasFan = false;
+    if (command->hasVane && equals(command->vane, state.vane)) command->hasVane = false;
+    if (command->hasWideVane && equals(command->wideVane, state.wideVane)) command->hasWideVane = false;
+}
+
+void rememberAutomationTarget(const cn105_core::SetCommand& command) {
+    const int64_t now = esp_timer_get_time();
+    size_t slot = 0;
+    for (size_t i = 0; i < kAutomationPendingTargets; ++i) {
+        if (!automation_targets[i].active || automation_targets[i].expiresAtUs <= now) {
+            slot = i;
+            break;
+        }
+        if (automation_targets[i].expiresAtUs < automation_targets[slot].expiresAtUs) {
+            slot = i;
+        }
+    }
+
+    AutomationTarget& target = automation_targets[slot];
+    target = {};
+    target.active = true;
+    target.expiresAtUs = now + kAutomationTargetLifetimeUs;
+    target.hasPower = command.hasPower;
+    target.hasMode = command.hasMode;
+    target.hasTemperatureF = command.hasTemperatureF;
+    target.temperatureF = command.temperatureF;
+    target.hasFan = command.hasFan;
+    target.hasVane = command.hasVane;
+    target.hasWideVane = command.hasWideVane;
+    if (command.hasPower) std::snprintf(target.power, sizeof(target.power), "%s", command.power);
+    if (command.hasMode) std::snprintf(target.mode, sizeof(target.mode), "%s", command.mode);
+    if (command.hasFan) std::snprintf(target.fan, sizeof(target.fan), "%s", command.fan);
+    if (command.hasVane) std::snprintf(target.vane, sizeof(target.vane), "%s", command.vane);
+    if (command.hasWideVane) std::snprintf(target.wideVane, sizeof(target.wideVane), "%s", command.wideVane);
+}
+
+bool targetMatchesState(const AutomationTarget& target, const cn105_core::MockState& state) {
+    return (!target.hasPower || equals(target.power, state.power)) &&
+           (!target.hasMode || equals(target.mode, state.mode)) &&
+           (!target.hasTemperatureF || target.temperatureF == state.targetTemperatureF) &&
+           (!target.hasFan || equals(target.fan, state.fan)) &&
+           (!target.hasVane || equals(target.vane, state.vane)) &&
+           (!target.hasWideVane || equals(target.wideVane, state.wideVane));
+}
+
+bool consumeAutomationEcho(const cn105_core::MockState& state) {
+    const int64_t now = esp_timer_get_time();
+    for (AutomationTarget& target : automation_targets) {
+        if (!target.active) {
+            continue;
+        }
+        if (target.expiresAtUs <= now) {
+            target.active = false;
+            continue;
+        }
+        if (targetMatchesState(target, state)) {
+            target.active = false;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool fillCommandFromLuaActions(const lua_vm::RunResult& result,
+                               const cn105_core::MockState& state,
                                cn105_core::SetCommand* command,
                                char* power,
                                size_t power_len,
@@ -97,7 +243,8 @@ bool fillCommandFromLuaActions(const lua_vm::RunResult& result,
                 break;
         }
     }
-    return any;
+    removeNoOpFields(state, command);
+    return any && commandHasChanges(*command);
 }
 
 void runLuaAutomationHook(const char* hook,
@@ -109,8 +256,10 @@ void runLuaAutomationHook(const char* hook,
     }
     if (!result.ok) {
         ESP_LOGW(TAG, "Lua hook %s failed: %s", hook, result.message);
+        noteAutomationFailure(result.message);
         return;
     }
+    automation_consecutive_errors = 0;
     if (result.actionCount == 0) {
         return;
     }
@@ -122,6 +271,7 @@ void runLuaAutomationHook(const char* hook,
     char vane[16] = {};
     char wide_vane[32] = {};
     if (!fillCommandFromLuaActions(result,
+                                   state,
                                    &command,
                                    power,
                                    sizeof(power),
@@ -135,10 +285,16 @@ void runLuaAutomationHook(const char* hook,
                                    sizeof(wide_vane))) {
         return;
     }
+    if (!allowAutomationActionBatch()) {
+        return;
+    }
 
     if (device_settings::useRealCn105()) {
         if (!cn105_transport::queueSetCommand(command)) {
             ESP_LOGW(TAG, "Lua hook %s could not queue CN105 command", hook);
+            noteAutomationFailure("CN105 command queue rejected automation action");
+        } else {
+            rememberAutomationTarget(command);
         }
         return;
     }
@@ -151,6 +307,9 @@ void runLuaAutomationHook(const char* hook,
     }
     if (!cn105_core::applySetPacketToMock(packet.bytes, packet.length, error, sizeof(error))) {
         ESP_LOGW(TAG, "Lua hook %s mock apply failed: %s", hook, error);
+        noteAutomationFailure(error);
+    } else {
+        rememberAutomationTarget(command);
     }
 }
 
@@ -255,13 +414,17 @@ extern "C" void app_main(void) {
         if (cn105_core::isMockDirty()) {
             const cn105_core::MockState current_state = cn105_core::getMockState();
             homekit_bridge::syncFromMock();
-            runLuaAutomationHook("on_state_changed",
-                                 current_state,
-                                 has_previous_state ? &previous_state : nullptr);
-            if (has_previous_state && !isOn(previous_state) && isOn(current_state)) {
-                runLuaAutomationHook("on_power_on", current_state, &previous_state);
-            } else if (has_previous_state && isOn(previous_state) && !isOn(current_state)) {
-                runLuaAutomationHook("on_power_off", current_state, &previous_state);
+            if (consumeAutomationEcho(current_state)) {
+                ESP_LOGI(TAG, "Skipping Lua hooks for automation-originated state confirmation");
+            } else {
+                runLuaAutomationHook("on_state_changed",
+                                     current_state,
+                                     has_previous_state ? &previous_state : nullptr);
+                if (has_previous_state && !isOn(previous_state) && isOn(current_state)) {
+                    runLuaAutomationHook("on_power_on", current_state, &previous_state);
+                } else if (has_previous_state && isOn(previous_state) && !isOn(current_state)) {
+                    runLuaAutomationHook("on_power_off", current_state, &previous_state);
+                }
             }
             previous_state = current_state;
             has_previous_state = true;
