@@ -483,6 +483,27 @@ textarea {
   margin-bottom: 6px
 }
 
+.info-banner {
+  margin: 12px 0;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  border-left: 2px solid #68b7ff;
+  background: rgba(104, 183, 255, .06);
+  color: #9bcfff
+}
+
+.info-banner strong {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #68b7ff;
+  margin-bottom: 6px
+}
+
 /* Pre / code */
 pre {
   margin-top: 12px;

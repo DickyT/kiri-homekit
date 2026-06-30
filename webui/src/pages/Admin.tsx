@@ -1010,8 +1010,8 @@ export function AdminPage(): JSX.Element {
             </Field>
           ))}
         </div>
-        <div class="guide-callout" style={{ marginTop: "18px" }}>
-          <strong>Original Swing control</strong>{" "}
+        <div class="info-banner" style={{ marginTop: "18px" }}>
+          <strong>Original Swing control</strong>
           {(currentHomeKitMapping & (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)) === (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)
             ? "Both dedicated Swing switches are enabled, so the original Swing control is removed from the AC/Airflow service."
             : (currentHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
