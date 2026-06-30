@@ -44,6 +44,7 @@ function sameForm(a: FormState, b: FormState): boolean {
 export function ControlPage(): JSX.Element {
   const [form, setForm] = useState<FormState>(FORM_DEFAULT);
   const [draftLocked, setDraftLocked] = useState(false);
+  const [dirtyFields, setDirtyFields] = useState<Set<keyof FormState>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("Loading…");
   const draftRef = useRef(draftLocked);
@@ -56,15 +57,24 @@ export function ControlPage(): JSX.Element {
     const remote = fromMock(s.cn105.mock_state);
     if (draftRef.current) {
       // Auto-clear lock once server reflects user's last commit.
-      if (sameForm(form, remote)) setDraftLocked(false);
+      if (sameForm(form, remote)) {
+        setDraftLocked(false);
+        setDirtyFields(new Set());
+      }
       return;
     }
     setForm(remote);
+    setDirtyFields(new Set());
     if (!busy && msg === "Loading…") setMsg("Ready");
   }, [status.value, busy, msg]);
 
   function update<K extends keyof FormState>(key: K, value: string): void {
     setForm((f) => ({ ...f, [key]: value }));
+    setDirtyFields((fields) => {
+      const next = new Set(fields);
+      next.add(key);
+      return next;
+    });
     setDraftLocked(true);
     setMsg("Local draft (not sent yet)");
   }
@@ -83,25 +93,37 @@ export function ControlPage(): JSX.Element {
     setMsg("Sending…");
     try {
       const params = new URLSearchParams();
-      params.set("power", form.power);
-      params.set("mode", form.mode);
-      params.set("temperature_f", form.temp);
-      params.set("fan", form.fan);
-      if (supportsUpDownAirflow) params.set("vane", form.vane);
-      if (supportsLeftRightAirflow) params.set("wide_vane", form.wide);
+      if (dirtyFields.size === 0) {
+        params.set("power", form.power);
+        params.set("mode", form.mode);
+        params.set("temperature_f", form.temp);
+        params.set("fan", form.fan);
+        if (supportsUpDownAirflow) params.set("vane", form.vane);
+        if (supportsLeftRightAirflow) params.set("wide_vane", form.wide);
+      } else {
+        if (dirtyFields.has("power")) params.set("power", form.power);
+        if (dirtyFields.has("mode")) params.set("mode", form.mode);
+        if (dirtyFields.has("temp")) params.set("temperature_f", form.temp);
+        if (dirtyFields.has("fan")) params.set("fan", form.fan);
+        if (supportsUpDownAirflow && dirtyFields.has("vane")) params.set("vane", form.vane);
+        if (supportsLeftRightAirflow && dirtyFields.has("wide")) params.set("wide_vane", form.wide);
+      }
       const j = await api.buildSet(params);
       if (j.ok) {
         setDraftLocked(false);
+        setDirtyFields(new Set());
         if (j.mock_state) setForm(fromMock(j.mock_state));
         setMsg("Sent");
         setTimeout(() => fetchStatusOnce(), 300);
         return;
       }
       setForm(previous);
+      setDirtyFields(new Set());
       setDraftLocked(false);
       setMsg("Send failed: " + (j.error ?? "unknown"));
     } catch (e: any) {
       setForm(previous);
+      setDirtyFields(new Set());
       setDraftLocked(false);
       setMsg("Send failed: " + (e?.message ?? e));
     } finally {

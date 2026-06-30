@@ -21,6 +21,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -166,25 +167,48 @@ cn105_core::SetCommand commandView(const QueuedSetCommand& queued) {
     return command;
 }
 
-bool commandMatchesState(const cn105_core::SetCommand& command) {
+bool reportMismatch(char* message,
+                    size_t message_len,
+                    const char* field,
+                    const char* requested,
+                    const char* actual) {
+    if (message != nullptr && message_len > 0) {
+        std::snprintf(message,
+                      message_len,
+                      "CN105 mismatch: %s requested=%s actual=%s",
+                      field,
+                      requested != nullptr ? requested : "",
+                      actual != nullptr ? actual : "");
+    }
+    return false;
+}
+
+bool reportMismatch(char* message, size_t message_len, const char* field, int requested, int actual) {
+    if (message != nullptr && message_len > 0) {
+        std::snprintf(message, message_len, "CN105 mismatch: %s requested=%d actual=%d", field, requested, actual);
+    }
+    return false;
+}
+
+bool commandMatchesState(const cn105_core::SetCommand& command, char* mismatch, size_t mismatch_len) {
     const cn105_core::MockState state = cn105_core::getMockState();
     if (command.hasPower && command.power != nullptr && std::strcmp(state.power, command.power) != 0) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "power", command.power, state.power);
     }
     if (command.hasMode && command.mode != nullptr && std::strcmp(state.mode, command.mode) != 0) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "mode", command.mode, state.mode);
     }
     if (command.hasTemperatureF && state.targetTemperatureF != command.temperatureF) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "temperature_f", command.temperatureF, state.targetTemperatureF);
     }
     if (command.hasFan && command.fan != nullptr && std::strcmp(state.fan, command.fan) != 0) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "fan", command.fan, state.fan);
     }
     if (command.hasVane && command.vane != nullptr && std::strcmp(state.vane, command.vane) != 0) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "vane", command.vane, state.vane);
     }
     if (command.hasWideVane && command.wideVane != nullptr && std::strcmp(state.wideVane, command.wideVane) != 0) {
-        return false;
+        return reportMismatch(mismatch, mismatch_len, "wide_vane", command.wideVane, state.wideVane);
     }
     return true;
 }
@@ -579,6 +603,7 @@ bool queueSetCommandAndConfirm(const cn105_core::SetCommand& command, ApplyResul
         if (result != nullptr) {
             result->attempts = info_attempt;
         }
+        char mismatch[sizeof(result->message)] = {};
         const uint32_t info_baseline = ts.controlInfoUpdates;
         requestImmediateControlInfo();
         const uint32_t wait_ms = info_attempt == kConfirmInfoAttempts ? kConfirmInfoFinalWaitMs : kConfirmInfoRetryMs;
@@ -590,7 +615,7 @@ bool queueSetCommandAndConfirm(const cn105_core::SetCommand& command, ApplyResul
             vTaskDelay(pdMS_TO_TICKS(20));
         }
         if (ts.controlInfoUpdates != info_baseline && ts.lastControlInfoUs >= ts.lastSetAckUs) {
-            if (commandMatchesState(command)) {
+            if (commandMatchesState(command, mismatch, sizeof(mismatch))) {
                 if (result != nullptr) {
                     result->confirmed = true;
                     copyString(result->message, sizeof(result->message), "CN105 state confirmed");
@@ -598,9 +623,12 @@ bool queueSetCommandAndConfirm(const cn105_core::SetCommand& command, ApplyResul
                 return true;
             }
         }
+        if (info_attempt == kConfirmInfoAttempts && mismatch[0] != '\0' && result != nullptr) {
+            copyString(result->message, sizeof(result->message), mismatch);
+        }
     }
 
-    if (result != nullptr) {
+    if (result != nullptr && result->message[0] == '\0') {
         copyString(result->message, sizeof(result->message), "CN105 did not confirm the requested state");
     }
     return false;
