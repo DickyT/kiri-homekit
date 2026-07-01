@@ -127,6 +127,7 @@ export type AutomationAction = {
 
 export type AutomationStatus = {
   ok?: boolean;
+  api_version: number;
   enabled: boolean;
   script_exists: boolean;
   script_size: number;
@@ -146,6 +147,18 @@ export type AutomationStatus = {
   last_action_attempts: number;
   last_action_message?: string;
   last_actions: AutomationAction[];
+  history: Array<{
+    sequence: number;
+    uptime_ms: number;
+    duration_ms: number;
+    ok: boolean;
+    hook_found: boolean;
+    instruction_limit_hit: boolean;
+    peak_bytes: number;
+    action_count: number;
+    hook: string;
+    message: string;
+  }>;
 };
 
 export type LogFile = { name: string; size: number; current: boolean };

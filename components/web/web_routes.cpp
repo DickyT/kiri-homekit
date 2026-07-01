@@ -378,6 +378,8 @@ std::string luaActionsJson(const lua_vm::Action* actions, size_t count) {
 std::string automationStatusJson() {
     const lua_vm::RuntimeStatus status = lua_vm::getRuntimeStatus();
     std::string body = "{\"ok\":true";
+    body += ",\"api_version\":";
+    body += std::to_string(lua_vm::kApiVersion);
     body += ",\"enabled\":";
     body += status.enabled ? "true" : "false";
     body += ",\"script_exists\":";
@@ -417,6 +419,27 @@ std::string automationStatusJson() {
     body += "\"";
     body += ",\"last_actions\":";
     body += luaActionsJson(status.lastActions, status.lastActionCount);
+    body += ",\"history\":[";
+    for (size_t i = 0; i < status.historyCount; ++i) {
+        if (i > 0) {
+            body += ",";
+        }
+        const lua_vm::RunHistoryEntry& entry = status.history[i];
+        body += "{\"sequence\":" + std::to_string(entry.sequence);
+        body += ",\"uptime_ms\":" + std::to_string(entry.uptimeMs);
+        body += ",\"duration_ms\":" + std::to_string(entry.durationMs);
+        body += ",\"ok\":";
+        body += entry.ok ? "true" : "false";
+        body += ",\"hook_found\":";
+        body += entry.hookFound ? "true" : "false";
+        body += ",\"instruction_limit_hit\":";
+        body += entry.instructionLimitHit ? "true" : "false";
+        body += ",\"peak_bytes\":" + std::to_string(entry.peakBytes);
+        body += ",\"action_count\":" + std::to_string(entry.actionCount);
+        body += ",\"hook\":\"" + platform_fs::jsonEscape(entry.hook);
+        body += "\",\"message\":\"" + platform_fs::jsonEscape(entry.message) + "\"}";
+    }
+    body += "]";
     body += "}";
     return body;
 }

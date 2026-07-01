@@ -282,6 +282,7 @@ function renderTransport(t: TransportStatus | undefined): string {
 function renderAutomationLog(a: AutomationStatus | null): string {
   if (!a) return "Loading automation status…";
   const lines = [
+    `API: v${a.api_version}`,
     `enabled: ${a.enabled ? "yes" : "no"}`,
     `script: ${a.script_exists ? `${a.script_size}/${a.script_max_bytes} bytes` : "not saved"}`,
     `runs: ${a.run_count}`,
@@ -312,6 +313,15 @@ function renderAutomationLog(a: AutomationStatus | null): string {
     lines.push(`CN105 action: ${a.action_pending ? "pending" : (a.last_action_confirmed ? "confirmed" : "failed")}`);
     lines.push(`confirmation attempts: ${a.last_action_attempts}`);
     lines.push(`confirmation message: ${a.last_action_message || "--"}`);
+  }
+  if (a.history?.length) {
+    lines.push("recent runs:");
+    for (const run of a.history) {
+      lines.push(
+        `  #${run.sequence} ${run.hook} ${run.ok ? "ok" : "error"} ` +
+        `${run.duration_ms}ms ${run.peak_bytes}B actions=${run.action_count}: ${run.message}`,
+      );
+    }
   }
   return lines.join("\n");
 }

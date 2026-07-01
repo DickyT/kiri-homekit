@@ -443,8 +443,10 @@ extern "C" void app_main(void) {
 
     const lua_vm::ProbeResult lua_probe = lua_vm::runProbe();
     ESP_LOGI(TAG,
-             "Lua VM probe: ok=%d peak=%u bytes message=%s",
+             "Lua VM self-test: ok=%d checks=%u/%u peak=%u bytes message=%s",
              lua_probe.ok,
+             static_cast<unsigned>(lua_probe.checksPassed),
+             static_cast<unsigned>(lua_probe.checksTotal),
              static_cast<unsigned>(lua_probe.peakBytes),
              lua_probe.message);
 

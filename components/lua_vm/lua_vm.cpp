@@ -9,6 +9,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "device_settings.h"
 #include "nvs.h"
 #include "platform_lock.h"
@@ -31,7 +32,6 @@ constexpr const char* kEnabledKey = "enabled";
 constexpr const char* kKvNamespace = "lua_kv";
 constexpr size_t kArenaSize = 32 * 1024;
 constexpr int kInstructionLimit = 8000;
-constexpr int kApiVersion = 1;
 constexpr size_t kKvMaxEntries = 16;
 constexpr size_t kKvMaxValueLength = 95;
 constexpr size_t kKvMaxTotalBytes = 1024;
@@ -107,7 +107,7 @@ void refreshScriptInfoLocked(lua_vm::RuntimeStatus* status) {
     scriptInfo(&status->scriptExists, &status->scriptSize);
 }
 
-void recordRun(const char* hookName, const lua_vm::RunResult& result) {
+void recordRun(const char* hookName, const lua_vm::RunResult& result, uint32_t duration_ms) {
     platform_lock::ScopedLock lock(status_lock);
     refreshScriptInfoLocked(&runtime_status);
     runtime_status.enabled = lua_vm::isEnabled();
@@ -124,6 +124,23 @@ void recordRun(const char* hookName, const lua_vm::RunResult& result) {
     for (size_t i = 0; i < lua_vm::kMaxActions; ++i) {
         runtime_status.lastActions[i] = i < runtime_status.lastActionCount ? result.actions[i] : lua_vm::Action{};
     }
+
+    for (size_t i = lua_vm::kRunHistorySize - 1; i > 0; --i) {
+        runtime_status.history[i] = runtime_status.history[i - 1];
+    }
+    lua_vm::RunHistoryEntry& entry = runtime_status.history[0];
+    entry = {};
+    entry.sequence = runtime_status.runCount;
+    entry.uptimeMs = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    entry.durationMs = duration_ms;
+    entry.ok = result.ok;
+    entry.hookFound = result.hookFound;
+    entry.instructionLimitHit = result.instructionLimitHit;
+    entry.peakBytes = result.peakBytes;
+    entry.actionCount = result.actionCount;
+    copyString(entry.hook, sizeof(entry.hook), hookName);
+    copyString(entry.message, sizeof(entry.message), result.message);
+    runtime_status.historyCount = std::min(runtime_status.historyCount + 1, lua_vm::kRunHistorySize);
 }
 
 void* arenaAlloc(void* ud, void* ptr, size_t osize, size_t nsize) {
@@ -578,7 +595,7 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     lua_setglobal(L, "state");
 
     lua_createtable(L, 0, 2);
-    lua_pushinteger(L, kApiVersion);
+    lua_pushinteger(L, lua_vm::kApiVersion);
     lua_setfield(L, -2, "api_version");
     lua_createtable(L, 0, 5);
     const uint32_t capabilities = device_settings::acCapabilities();
@@ -950,37 +967,73 @@ void recordActionResult(bool confirmed, uint8_t attempts, const char* message) {
 }
 
 ProbeResult runProbe() {
-    RunResult result{};
-    ScriptContext ctx{.result = &result};
-    Arena* arena = nullptr;
-    lua_State* L = nullptr;
-    if (!createLua(&L, &arena, &ctx)) {
-        return {false, 0, "lua_newstate failed"};
-    }
+    ProbeResult probe{};
+    probe.checksTotal = 5;
 
-    constexpr const char* script =
-        "local x = 0\n"
-        "for i = 1, 64 do x = x + i end\n"
-        "return x == 2080\n";
-    int rc = luaL_loadstring(L, script);
-    if (rc == LUA_OK) {
-        rc = lua_pcall(L, 0, 1, 0);
-    }
+    const auto expectValidation = [&probe](const char* script, bool expected_ok, bool expected_limit) {
+        const ValidationResult result = validateScriptBuffer(script, std::strlen(script));
+        probe.peakBytes = std::max(probe.peakBytes, result.peakBytes);
+        if (result.ok == expected_ok && result.instructionLimitHit == expected_limit) {
+            probe.checksPassed++;
+            return true;
+        }
+        copyString(probe.message, sizeof(probe.message), result.message);
+        return false;
+    };
 
-    bool ok = false;
-    const char* message = "ok";
-    if (rc == LUA_OK) {
-        ok = lua_toboolean(L, -1);
-        message = ok ? "ok" : "unexpected result";
-    } else {
-        message = lua_tostring(L, -1);
-    }
+    expectValidation("function on_state_changed(now, previous) end", true, false);
+    expectValidation("function on_state_changed(", false, false);
+    expectValidation("while true do end", false, true);
 
-    const size_t peak = arena != nullptr ? arena->peak : 0;
-    ESP_LOGI(TAG, "Lua probe %s peak=%u bytes", message ? message : "unknown",
-             static_cast<unsigned>(peak));
-    destroyLua(L, arena);
-    return {ok, peak, message ? message : "unknown"};
+    const auto expectHook = [&probe](const char* script, bool expected_ok, size_t expected_actions) {
+        RunResult result{};
+        ScriptContext ctx{.result = &result, .instructionsLeft = kInstructionLimit, .validationOnly = true};
+        Arena* arena = nullptr;
+        lua_State* L = nullptr;
+        if (!createLua(&L, &arena, &ctx)) {
+            copyString(probe.message, sizeof(probe.message), "lua_newstate failed");
+            return false;
+        }
+        registerApi(L, &ctx, cn105_core::MockState{});
+        int rc = luaL_loadbuffer(L, script, std::strlen(script), "self-test.lua");
+        if (rc == LUA_OK) {
+            rc = lua_pcall(L, 0, 0, 0);
+        }
+        if (rc == LUA_OK) {
+            lua_getglobal(L, "on_state_changed");
+            pushState(L, cn105_core::MockState{});
+            lua_pushnil(L);
+            rc = lua_pcall(L, 2, 0, 0);
+        }
+        const bool ok = (rc == LUA_OK) == expected_ok && result.actionCount == expected_actions;
+        probe.peakBytes = std::max(probe.peakBytes, arena != nullptr ? arena->peak : 0);
+        if (ok) {
+            probe.checksPassed++;
+        } else {
+            copyString(probe.message,
+                       sizeof(probe.message),
+                       rc == LUA_OK ? "unexpected self-test action result" : lua_tostring(L, -1));
+        }
+        destroyLua(L, arena);
+        return ok;
+    };
+
+    expectHook("function on_state_changed(now, previous) ac.set_fan(3) end", true, 1);
+    expectHook("function on_state_changed(now, previous) ac.set_target_temp_f(99) end", false, 0);
+
+    probe.ok = probe.checksPassed == probe.checksTotal;
+    if (probe.ok) {
+        copyString(probe.message, sizeof(probe.message), "all checks passed");
+    } else if (probe.message[0] == '\0') {
+        copyString(probe.message, sizeof(probe.message), "self-test failed");
+    }
+    ESP_LOGI(TAG,
+             "Lua self-test %u/%u passed peak=%u bytes: %s",
+             static_cast<unsigned>(probe.checksPassed),
+             static_cast<unsigned>(probe.checksTotal),
+             static_cast<unsigned>(probe.peakBytes),
+             probe.message);
+    return probe;
 }
 
 RunResult runHook(const char* hookName,
@@ -999,6 +1052,10 @@ RunResult runHook(const char* hookName,
         setMessage(&result, "automation script not found");
         return result;
     }
+    const int64_t started_us = esp_timer_get_time();
+    const auto elapsedMs = [&started_us]() {
+        return static_cast<uint32_t>((esp_timer_get_time() - started_us) / 1000);
+    };
 
     ScriptContext ctx{.result = &result};
     Arena* arena = nullptr;
@@ -1018,7 +1075,7 @@ RunResult runHook(const char* hookName,
     if (rc != LUA_OK) {
         setMessage(&result, lua_tostring(L, -1));
         result.peakBytes = arena != nullptr ? arena->peak : 0;
-        recordRun(hookName, result);
+        recordRun(hookName, result, elapsedMs());
         destroyLua(L, arena);
         return result;
     }
@@ -1030,7 +1087,7 @@ RunResult runHook(const char* hookName,
         result.hookFound = false;
         setMessage(&result, "hook not defined");
         result.peakBytes = arena != nullptr ? arena->peak : 0;
-        recordRun(hookName, result);
+        recordRun(hookName, result, elapsedMs());
         destroyLua(L, arena);
         return result;
     }
@@ -1046,7 +1103,7 @@ RunResult runHook(const char* hookName,
     result.peakBytes = arena != nullptr ? arena->peak : 0;
     if (rc != LUA_OK) {
         setMessage(&result, lua_tostring(L, -1));
-        recordRun(hookName, result);
+        recordRun(hookName, result, elapsedMs());
         destroyLua(L, arena);
         return result;
     }
@@ -1060,7 +1117,7 @@ RunResult runHook(const char* hookName,
                  result.actions[i].value,
                  result.actions[i].intValue);
     }
-    recordRun(hookName, result);
+    recordRun(hookName, result, elapsedMs());
     destroyLua(L, arena);
     return result;
 }

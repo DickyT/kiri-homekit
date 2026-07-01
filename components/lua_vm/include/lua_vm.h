@@ -8,7 +8,9 @@
 namespace lua_vm {
 
 inline constexpr size_t kMaxActions = 4;
+inline constexpr size_t kRunHistorySize = 12;
 inline constexpr size_t kMaxScriptBytes = 12 * 1024;
+inline constexpr uint8_t kApiVersion = 1;
 inline constexpr uint8_t kHookStateChanged = 1 << 0;
 inline constexpr uint8_t kHookPowerOn = 1 << 1;
 inline constexpr uint8_t kHookPowerOff = 1 << 2;
@@ -41,9 +43,11 @@ struct RunResult {
 };
 
 struct ProbeResult {
-    bool ok;
-    size_t peakBytes;
-    const char* message;
+    bool ok = false;
+    size_t peakBytes = 0;
+    uint8_t checksPassed = 0;
+    uint8_t checksTotal = 0;
+    char message[128] = "";
 };
 
 struct ValidationResult {
@@ -52,6 +56,19 @@ struct ValidationResult {
     uint8_t hookMask = 0;
     size_t peakBytes = 0;
     char message[128] = "";
+};
+
+struct RunHistoryEntry {
+    uint32_t sequence = 0;
+    uint32_t uptimeMs = 0;
+    uint32_t durationMs = 0;
+    bool ok = false;
+    bool hookFound = false;
+    bool instructionLimitHit = false;
+    size_t peakBytes = 0;
+    size_t actionCount = 0;
+    char hook[32] = "";
+    char message[96] = "";
 };
 
 struct RuntimeStatus {
@@ -74,6 +91,8 @@ struct RuntimeStatus {
     char lastMessage[128] = "";
     char lastActionMessage[128] = "";
     Action lastActions[kMaxActions] = {};
+    size_t historyCount = 0;
+    RunHistoryEntry history[kRunHistorySize] = {};
 };
 
 const char* scriptLogicalPath();

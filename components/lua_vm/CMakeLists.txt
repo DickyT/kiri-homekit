@@ -36,6 +36,7 @@ idf_component_register(
     PRIV_REQUIRES
         core_cn105
         device_settings
+        esp_timer
         log
         nvs_flash
         platform_lock
