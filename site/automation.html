@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Automation Editor — Kiri Bridge</title>
+<meta name="description" content="Write, validate, and download safe on-device Lua automations for Kiri Bridge and Mitsubishi CN105 heat pumps.">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://kiri.dkt.moe/automation.html">
+<link rel="stylesheet" href="kiri.css">
+</head>
+<body class="automation-page">
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>Kiri Bridge<span class="brand-page">automation</span></a>
+    <div class="nav-links">
+      <a href="features.html">features</a>
+      <a href="wiki.html">wiki</a>
+      <a href="https://github.com/DickyT/kiri-homekit">github</a>
+    </div>
+  </div>
+</nav>
+
+<main class="automation-main">
+  <header class="automation-head shell">
+    <div>
+      <div class="feature-eyebrow">Kiri Lua API v1</div>
+      <h1>Make the indoor unit<br><span class="accent">react locally</span>.</h1>
+    </div>
+    <p>Write a small rule here, run the preflight check, then paste it into <strong>Admin &gt; Automation</strong> on your Kiri Bridge. Scripts run locally with bounded memory and instructions.</p>
+  </header>
+
+  <section class="automation-workspace shell">
+    <div class="automation-toolbar">
+      <label for="example-select">Example</label>
+      <select id="example-select">
+        <option value="fan-boost">Fan boost with hysteresis</option>
+        <option value="restore-airflow">Remember and restore airflow</option>
+        <option value="quiet-near-target">Quiet mode near target</option>
+        <option value="diagnostic-log">Diagnostic logging only</option>
+      </select>
+      <div class="automation-actions">
+        <button class="btn" id="check-btn" type="button">Run preflight</button>
+        <button class="btn" id="copy-btn" type="button">Copy</button>
+        <button class="btn btn-primary" id="download-btn" type="button">Download .lua</button>
+      </div>
+    </div>
+
+    <div class="automation-editor-layout">
+      <div class="automation-editor-pane">
+        <div class="automation-editor-meta">
+          <span>automation.lua</span>
+          <span id="byte-count">0 / 12288 bytes</span>
+        </div>
+        <div id="editor" aria-label="Lua automation editor"></div>
+        <textarea id="editor-fallback" aria-label="Lua automation editor fallback" spellcheck="false"></textarea>
+        <div class="automation-result" id="preflight-result" role="status">Loading editor...</div>
+      </div>
+
+      <aside class="automation-reference">
+        <div class="automation-reference-head">API reference <span>v1</span></div>
+        <details open><summary>Hooks</summary><code>on_state_changed(now, previous)</code><code>on_power_on(now, previous)</code><code>on_power_off(now, previous)</code></details>
+        <details open><summary>Read state</summary><code>state.current()</code><code>now.power / power_raw / mode</code><code>now.room_temp_f / target_temp_f</code><code>now.fan / operating / connected</code><code>now.up_down_airflow</code><code>now.left_right_airflow</code><code>now.compressor_hz / input_power_w</code></details>
+        <details><summary>Control AC</summary><code>ac.set_power(boolean)</code><code>ac.set_mode("AUTO" | "HEAT" | "COOL" | "DRY" | "FAN")</code><code>ac.set_target_temp_f(50..88)</code><code>ac.set_fan("AUTO" | "QUIET" | 1..4)</code><code>ac.set_up_down_airflow("AUTO" | "SWING" | "1".."5")</code><code>ac.set_left_right_airflow(value)</code><code>ac.set_swing(boolean)</code></details>
+        <details><summary>Persistent values</summary><code>kv.get("key")</code><code>kv.set("key", value)</code><code>kv.delete("key")</code><p>16 keys and 1 KiB total. Unchanged values do not rewrite flash.</p></details>
+        <details><summary>Device and logs</summary><code>kiri.api_version</code><code>kiri.capabilities.*</code><code>log.info(value)</code><code>log.warn(value)</code></details>
+        <div class="automation-safety"><strong>Safety limits</strong><span>12 KiB script</span><span>32 KiB VM arena</span><span>4 actions per hook</span><span>loop and action-storm protection</span></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-row">
+    <div class="footer-brand"><span class="brand-mark" aria-hidden="true"></span><span><strong>Kiri Bridge</strong> — local CN105 automation · GPL-3.0</span></div>
+    <span class="automation-credits">Editor: Monaco · Parser: luaparse · both MIT licensed</span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/luaparse@0.3.1/luaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<script>
+(() => {
+  const MAX_BYTES = 12288;
+  const fallback = document.getElementById('editor-fallback');
+  const result = document.getElementById('preflight-result');
+  const byteCount = document.getElementById('byte-count');
+  const exampleSelect = document.getElementById('example-select');
+  let editor = null;
+
+  const starter = `-- Kiri Bridge automation.lua\n\nfunction on_state_changed(state, previous)\n  if state.power and state.room_temp_f >= state.target_temp_f + 3 then\n    ac.set_fan(3)\n  end\nend\n`;
+  fallback.value = starter;
+
+  function value() { return editor ? editor.getValue() : fallback.value; }
+  function setValue(next) { if (editor) editor.setValue(next); else fallback.value = next; updateMeta(); }
+  function updateMeta() {
+    const bytes = new TextEncoder().encode(value()).length;
+    byteCount.textContent = `${bytes} / ${MAX_BYTES} bytes`;
+    byteCount.className = bytes > MAX_BYTES ? 'bad' : '';
+  }
+  function setResult(text, state) {
+    result.textContent = text;
+    result.className = `automation-result ${state || ''}`;
+  }
+  function preflight() {
+    const script = value();
+    const bytes = new TextEncoder().encode(script).length;
+    if (bytes > MAX_BYTES) return setResult(`Too large: ${bytes} bytes. The firmware limit is ${MAX_BYTES}.`, 'bad');
+    if (!/function\s+on_(state_changed|power_on|power_off)\s*\(/.test(script)) return setResult('Define at least one supported on_* hook.', 'bad');
+    if (typeof window.luaparse === 'undefined') return setResult('Parser unavailable. Check the CDN connection, then retry.', 'warn');
+    try {
+      window.luaparse.parse(script, { luaVersion: '5.3', locations: true });
+      setResult('Preflight passed. Firmware validation will run again before saving.', 'ok');
+    } catch (error) {
+      setResult(`Syntax error: ${error.message || error}`, 'bad');
+    }
+  }
+  async function loadExample(name) {
+    setResult('Loading example...', '');
+    try {
+      const response = await fetch(`automation-examples/${name}.lua`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setValue(await response.text());
+      setResult('Example loaded. Review it before using it on a real indoor unit.', 'ok');
+    } catch (error) {
+      setResult(`Could not load example: ${error.message || error}`, 'bad');
+    }
+  }
+
+  document.getElementById('check-btn').addEventListener('click', preflight);
+  document.getElementById('copy-btn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(value()); setResult('Copied to clipboard.', 'ok'); }
+    catch { setResult('Clipboard access failed. Select the script and copy it manually.', 'bad'); }
+  });
+  document.getElementById('download-btn').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([value()], { type: 'text/x-lua' }));
+    const link = document.createElement('a');
+    link.href = url; link.download = 'automation.lua'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  });
+  exampleSelect.addEventListener('change', () => loadExample(exampleSelect.value));
+  fallback.addEventListener('input', updateMeta);
+
+  if (typeof window.require !== 'undefined') {
+    window.require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs' } });
+    window.require(['vs/editor/editor.main'], () => {
+      monaco.languages.register({ id: 'kiri-lua' });
+      monaco.languages.setMonarchTokensProvider('kiri-lua', {
+        defaultToken: '', tokenPostfix: '.lua',
+        keywords: ['and','break','do','else','elseif','end','false','for','function','goto','if','in','local','nil','not','or','repeat','return','then','true','until','while'],
+        tokenizer: { root: [
+          [/--\[\[/, 'comment', '@comment'], [/--.*$/, 'comment'],
+          [/[a-zA-Z_]\w*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }],
+          [/[0-9]+(?:\.[0-9]+)?/, 'number'], [/"([^"\\]|\\.)*$/, 'string.invalid'], [/"/, 'string', '@stringDouble'], [/'/, 'string', '@stringSingle'],
+          [/[{}()\[\]]/, '@brackets'], [/[<>~=+\-*\/%^#]+/, 'operator'], [/[;,.]/, 'delimiter']
+        ], comment: [[/\]\]/, 'comment', '@pop'], [/./, 'comment']], stringDouble: [[/[^\\"]+/, 'string'], [/\\./, 'string.escape'], [/"/, 'string', '@pop']], stringSingle: [[/[^\\']+/, 'string'], [/\\./, 'string.escape'], [/'/, 'string', '@pop']] }
+      });
+      monaco.languages.registerCompletionItemProvider('kiri-lua', {
+        provideCompletionItems: (model, position) => {
+          const word = model.getWordUntilPosition(position);
+          const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+          return { suggestions: [
+          ['on_state_changed', 'function on_state_changed(state, previous)\n  $0\nend', 'State change hook'],
+          ['on_power_on', 'function on_power_on(state, previous)\n  $0\nend', 'Power-on hook'],
+          ['on_power_off', 'function on_power_off(state, previous)\n  $0\nend', 'Power-off hook'],
+          ['ac.set_fan', 'ac.set_fan(${1:3})', 'Set fan speed'],
+          ['ac.set_target_temp_f', 'ac.set_target_temp_f(${1:72})', 'Set target temperature'],
+          ['ac.set_up_down_airflow', 'ac.set_up_down_airflow("${1:1}")', 'Set up/down airflow'],
+          ['kv.set', 'kv.set("${1:key}", ${2:value})', 'Persist a small value'],
+          ['log.info', 'log.info(${1:value})', 'Write a diagnostic log']
+          ].map(([label, insertText, documentation]) => ({ label, insertText, documentation, kind: monaco.languages.CompletionItemKind.Function, insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, range })) };
+        }
+      });
+      editor = monaco.editor.create(document.getElementById('editor'), {
+        value: fallback.value, language: 'kiri-lua', theme: 'vs-dark', minimap: { enabled: false },
+        fontFamily: 'SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 13, lineHeight: 21,
+        padding: { top: 18, bottom: 18 }, automaticLayout: true, scrollBeyondLastLine: false,
+        tabSize: 2, insertSpaces: true, wordWrap: 'off', renderLineHighlight: 'line'
+      });
+      fallback.hidden = true;
+      editor.onDidChangeModelContent(updateMeta);
+      setResult('Editor ready. Choose an example or start writing.', 'ok');
+      updateMeta();
+    });
+  } else {
+    document.getElementById('editor').hidden = true;
+    setResult('Monaco could not load; the basic editor is available.', 'warn');
+  }
+  updateMeta();
+  loadExample('fan-boost');
+})();
+</script>
+</body>
+</html>

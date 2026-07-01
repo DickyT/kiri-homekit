@@ -197,7 +197,7 @@ p{margin:0;color:var(--ink-dim);max-width:62ch}
 }
 .feature-highlight h3{font-size:22px;margin-bottom:10px}
 .feature-highlight p{font-size:14px;color:var(--ink-dim)}
-.feature-highlight-link{margin-top:34px}
+.feature-highlight-link{margin-top:34px;display:flex;gap:18px;flex-wrap:wrap}
 
 /* Full feature guide */
 .feature-hero{
@@ -914,6 +914,93 @@ input[type=file]{cursor:pointer;font-family:var(--mono);font-size:13px}
   line-height:1.5;
 }
 
+/* Public Lua automation editor */
+.automation-main{padding-bottom:64px}
+.automation-head{
+  padding:72px 0 46px;
+  display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);
+  align-items:end;
+  gap:64px;
+}
+.automation-head p{font-size:17px;color:var(--ink-dim)}
+.automation-head strong{color:var(--ink);font-weight:400}
+.automation-workspace{border-top:1px solid var(--line)}
+.automation-toolbar{
+  min-height:66px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  border-bottom:1px solid var(--line);
+}
+.automation-toolbar label,.automation-editor-meta,.automation-reference-head{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--ink-faint);
+}
+.automation-toolbar select{
+  min-width:240px;
+  padding:9px 32px 9px 10px;
+  color:var(--ink);
+  background:#080808;
+  border:1px solid var(--line-strong);
+  border-radius:0;
+  font:12px var(--mono);
+}
+.automation-actions{margin-left:auto;display:flex;gap:8px}
+.automation-actions .btn{padding:10px 14px;font-size:11px}
+.automation-editor-layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 310px;
+  min-height:680px;
+  border-bottom:1px solid var(--line);
+}
+.automation-editor-pane{min-width:0;border-right:1px solid var(--line)}
+.automation-editor-meta{
+  height:42px;
+  padding:0 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:1px solid var(--line);
+}
+#editor,#editor-fallback{width:100%;height:580px}
+#editor-fallback{
+  margin:0;
+  padding:18px;
+  resize:none;
+  color:#ddd;
+  background:#090909;
+  border:0;
+  outline:0;
+  font:13px/1.6 var(--mono);
+}
+.automation-result{
+  min-height:54px;
+  padding:14px 16px;
+  border-top:1px solid var(--line);
+  font:12px/1.5 var(--mono);
+  color:var(--ink-dim);
+}
+.automation-result.ok{color:var(--ok)}
+.automation-result.warn{color:var(--warn)}
+.automation-result.bad{color:var(--bad)}
+.automation-reference{padding:20px 0 0 24px;overflow:auto}
+.automation-reference-head{display:flex;justify-content:space-between;padding-bottom:16px}
+.automation-reference-head span{color:var(--accent)}
+.automation-reference details{border-top:1px solid var(--line);padding:13px 0}
+.automation-reference summary{cursor:pointer;list-style:none;color:var(--ink);font-size:13px}
+.automation-reference summary::-webkit-details-marker{display:none}
+.automation-reference summary::after{content:"+";float:right;color:var(--accent);font-family:var(--mono)}
+.automation-reference details[open] summary::after{content:"-"}
+.automation-reference code{display:block;margin-top:8px;color:#c9c9c9;font:11px/1.5 var(--mono);white-space:normal;overflow-wrap:anywhere}
+.automation-reference p{margin-top:8px;font-size:12px}
+.automation-safety{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:grid;gap:5px;font:11px/1.5 var(--mono);color:var(--ink-faint)}
+.automation-safety strong{color:var(--accent);font-weight:400;text-transform:uppercase;letter-spacing:.12em}
+.automation-credits{font:10px var(--mono);color:var(--ink-faint)}
+
 /* Collapsible log */
 details.log{
   margin-top:48px;
@@ -1047,4 +1134,14 @@ details.log pre{
   .feature-cta .row{align-items:flex-start;flex-direction:column}
   .feature-cta .hero-actions{justify-content:flex-start}
   main{padding-bottom:56px}
+  .automation-head{grid-template-columns:1fr;gap:26px;padding:54px 0 36px}
+  .automation-toolbar{padding:14px 0;align-items:stretch;flex-direction:column}
+  .automation-toolbar select{width:100%}
+  .automation-actions{margin-left:0;display:grid;grid-template-columns:1fr 1fr}
+  .automation-actions .btn:last-child{grid-column:1/-1}
+  .automation-editor-layout{grid-template-columns:1fr;min-height:0}
+  .automation-editor-pane{border-right:0}
+  #editor,#editor-fallback{height:500px}
+  .automation-reference{padding:30px 0 0;border-top:1px solid var(--line)}
+  .automation-credits{display:none}
 }

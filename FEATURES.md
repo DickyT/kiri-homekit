@@ -6,8 +6,7 @@ HomeKit without another bridge, and provides its own local WebUI, setup flow,
 diagnostics, OTA updater, and recovery tools.
 
 This page describes the user-visible behavior of the current production and
-installer firmware. Features marked **Coming soon** are present only as
-development infrastructure and are not yet exposed as supported user features.
+installer firmware.
 
 ## Complete CN105 Control
 
@@ -362,17 +361,16 @@ a debugger to every installed unit.
   in one release build.
 - The Kiri Bridge hardware kit includes one CN105 cable.
 
-## Coming Soon: On-device Lua Automation
+## On-device Lua Automation
 
-> **Coming soon.** The constrained Lua engine exists in development firmware,
-> but its user interface is intentionally hidden while the API and support
-> experience are stabilized. It is not yet a supported production feature.
-
-The goal is to run small rules directly on Kiri Bridge without depending on
-Apple Home automations or another always-on server.
+Kiri can run small Lua 5.4 rules directly on the controller without depending
+on Apple Home automations or another always-on server. Scripts are managed in
+the local Admin page; the public [Kiri Automation Editor](https://kiri.dkt.moe/automation.html)
+provides examples, API completion, syntax preflight, copy, and download.
+The complete versioned contract is in [AUTOMATION.md](./AUTOMATION.md).
 
 <details>
-<summary><strong>Planned automation capabilities</strong></summary>
+<summary><strong>Automation API v1</strong></summary>
 
 - Hooks for `on_state_changed`, `on_power_on`, and `on_power_off`.
 - Read power, mode, target and room temperature, fan, both airflow axes,
@@ -380,18 +378,32 @@ Apple Home automations or another always-on server.
   state.
 - Set power, mode, target temperature, fan, up/down airflow, left/right
   airflow, and Swing.
-- Store small persistent values through NVS-backed `kv.get()` and `kv.set()`.
+- Inspect device support through `kiri.capabilities` and check
+  `kiri.api_version` before using future APIs.
+- Store small persistent values through NVS-backed `kv.get()`, `kv.set()`, and
+  `kv.delete()`.
 - Write script messages into the normal Kiri diagnostic log.
 
 The embedded Lua 5.4 runtime omits `io`, `os`, `package`, and `debug`, uses a
-bounded memory arena, and enforces an instruction limit so a bad script cannot
-grow without limit.
+32 KiB memory arena, and enforces an instruction limit so a bad script cannot
+grow without limit. Scripts are capped at 12 KiB and four AC actions per hook.
+Parameter and device-capability checks fail immediately with a useful error.
+
+Saving is atomic: a new script is validated before activation and the previous
+valid script is retained as a last-known-good copy. Runtime protection removes
+no-op actions, suppresses automation feedback loops, disables action storms,
+and records the latest 12 hook runs. Real CN105 actions run outside the callback
+and report their confirmation result and retry count.
+
+Persistent automation storage is intentionally small: 16 keys and 1 KiB total.
+Writing the same value again does not touch flash.
 
 </details>
 
 ## Learn More
 
 - Product website: <https://kiri.dkt.moe/>
+- Automation editor: <https://kiri.dkt.moe/automation.html>
 - Setup and recovery guides: <https://kiri.dkt.moe/wiki.html>
 - Firmware releases: <https://github.com/DickyT/kiri-homekit/releases/>
 - Support: [SUPPORT.md](./SUPPORT.md)

@@ -45,6 +45,7 @@
         <a href="#recovery">recovery</a>
         <a href="#diagnostics">diagnostics</a>
         <a href="#hardware">hardware</a>
+        <a href="#automation">automation</a>
       </div>
     </div>
   </section>
@@ -281,20 +282,20 @@
     </div>
   </section>
 
-  <section class="feature-section feature-coming" id="automation">
+  <section class="feature-section" id="automation">
     <div class="shell feature-layout">
       <header class="feature-intro">
         <div class="feature-number">09</div>
-        <div class="feature-status">Coming soon</div>
         <h2>On-device Lua automation</h2>
         <p>Small local rules that react to the indoor unit without depending on Apple Home automations or another always-on server.</p>
       </header>
       <div class="feature-list">
         <details class="feature-detail" open>
-          <summary><span>Engine under development</span><small>not yet a supported user feature</small></summary>
+          <summary><span>Safe local rules</span><small>Lua 5.4 · API v1 · bounded execution</small></summary>
           <div class="feature-detail-body">
             <p>The constrained Lua 5.4 engine can react to state changes and power events, read CN105 telemetry, change climate and airflow settings, retain small values in NVS, and write to the Kiri log.</p>
-            <p>Its memory and instruction budgets are bounded, and filesystem, operating-system, package, and debug libraries are removed. The engine exists in development firmware, but its UI remains hidden while the API and support experience are stabilized.</p>
+            <p>Scripts are validated and atomically saved with a last-known-good copy. Memory, instructions, actions, and persistent storage are bounded; feedback loops and action storms are automatically stopped. The latest runs and CN105 confirmation result remain visible in Admin.</p>
+            <p><a href="automation.html">Open the Automation Editor →</a> for API completion, syntax preflight, and ready-to-adapt examples.</p>
           </div>
         </details>
       </div>
@@ -309,6 +310,7 @@
       </div>
       <div class="hero-actions">
         <a class="btn btn-primary" href="wiki-new-device.html">Setup guide →</a>
+        <a class="btn" href="automation.html">Automation editor →</a>
         <a class="btn" href="https://github.com/DickyT/kiri-homekit/blob/main/FEATURES.md">Technical feature guide ↗</a>
       </div>
     </div>

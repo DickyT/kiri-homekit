@@ -425,6 +425,41 @@ textarea {
   white-space: pre
 }
 
+.automation-help a {
+  color: inherit;
+  text-decoration-color: rgba(155, 207, 255, .45)
+}
+
+.automation-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px
+}
+
+.automation-script-editor {
+  min-height: 340px;
+  margin-top: 16px;
+  tab-size: 2
+}
+
+.automation-runtime {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px
+}
+
+.automation-runtime summary {
+  cursor: pointer;
+  color: var(--ink-dim);
+  font: 11px var(--mono);
+  letter-spacing: .18em;
+  text-transform: uppercase
+}
+
+.automation-runtime pre {
+  margin-top: 12px
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -1495,6 +1530,14 @@ nav.tabs .tab-button svg {
 
   .btns .btn {
     flex: 1 1 auto
+  }
+
+  .automation-stats {
+    grid-template-columns: 1fr
+  }
+
+  .automation-script-editor {
+    min-height: 420px
   }
 
   .site-footer {

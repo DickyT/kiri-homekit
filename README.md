@@ -9,6 +9,7 @@ command line tools.
 
 - Website: <https://kiri.dkt.moe>
 - Features: <https://kiri.dkt.moe/features.html>
+- Automation editor: <https://kiri.dkt.moe/automation.html>
 - Wiki and setup guides: <https://kiri.dkt.moe/wiki.html>
 - WiFi setup: <https://kiri.dkt.moe/ble_provisioning.html>
 - Firmware recovery: <https://kiri.dkt.moe/flash.html>
@@ -26,10 +27,13 @@ command line tools.
 - Responsive local WebUI at `http://<device-ip>:8080/` with diagnostics and
   persistent logs.
 - Guided WiFi setup, validated `.kiri` OTA, and browser-based USB recovery.
+- Bounded on-device Lua automation with a public editor and local run history.
 - Atom Lite and AtomS3 Lite hardware support.
 
-See [FEATURES.md](./FEATURES.md) for the complete feature guide, including the
-advanced HomeKit airflow mappings and upcoming on-device Lua automation.
+See [FEATURES.md](./FEATURES.md) for the complete feature guide, including
+advanced HomeKit airflow mappings and on-device Lua automation. Scripts can be
+prepared in the [Kiri Automation Editor](https://kiri.dkt.moe/automation.html);
+the versioned API contract is documented in [AUTOMATION.md](./AUTOMATION.md).
 
 ## Hardware Kit
 
