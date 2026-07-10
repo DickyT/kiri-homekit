@@ -227,8 +227,8 @@ bool homeKitDatabaseSettingsChanged(const device_settings::Settings& before, con
            std::strcmp(before.homeKitSetupId, after.homeKitSetupId) != 0 ||
            before.homeKitSeparateAirflowTile != after.homeKitSeparateAirflowTile ||
            before.homeKitAdvancedMapping != after.homeKitAdvancedMapping ||
-           (before.acCapabilities & device_settings::kAcCapabilityTargetMask) !=
-               (after.acCapabilities & device_settings::kAcCapabilityTargetMask);
+           (before.acCapabilities & device_settings::kAcCapabilityHomeKitTargetMask) !=
+               (after.acCapabilities & device_settings::kAcCapabilityHomeKitTargetMask);
 }
 
 std::string deviceCfgJson() {
@@ -524,7 +524,7 @@ bool applyDeviceCfgJson(const char* json, size_t len, device_settings::Settings*
                 std::snprintf(error, error_len, "invalid HomeKit target modes");
                 return false;
             }
-            out->acCapabilities = (out->acCapabilities & ~device_settings::kAcCapabilityTargetMask) | mask;
+            out->acCapabilities = (out->acCapabilities & ~device_settings::kAcCapabilityHomeKitTargetMask) | mask;
             i = next;
             continue;
         }
@@ -922,6 +922,9 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
 
     char mode[16] = {};
     if (web_http::queryValue(query, "mode", mode, sizeof(mode))) {
+        if (!device_settings::supportsMode(mode)) {
+            return web_http::sendJsonError(req, "selected mode is disabled in Settings > AC Capabilities");
+        }
         command.hasMode = true;
         command.mode = mode;
         any = true;
@@ -1137,7 +1140,7 @@ esp_err_t configSaveHandler(httpd_req_t* req) {
         if (!device_settings::parseHomeKitTargetModeMask(value, &mask)) {
             return web_http::sendJsonError(req, "invalid HomeKit target modes");
         }
-        next.acCapabilities = (next.acCapabilities & ~device_settings::kAcCapabilityTargetMask) | mask;
+        next.acCapabilities = (next.acCapabilities & ~device_settings::kAcCapabilityHomeKitTargetMask) | mask;
     }
     if (web_http::queryValue(body, "led_pin", value, sizeof(value))) {
         next.statusLedPin = std::atoi(value);

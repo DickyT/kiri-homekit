@@ -55,6 +55,13 @@ char setup_code_canonical[12] = "";
 char setup_code_display[10] = "";
 char cn105_format_name[4] = "8E1";
 char homekit_target_mode_name[8] = "0,1,2";
+constexpr uint32_t kLegacyAcCapabilityUpDownAirflow = 1u << 3;
+constexpr uint32_t kLegacyAcCapabilityLeftRightAirflow = 1u << 4;
+constexpr uint32_t kLegacyAcCapabilityKnownMask =
+    device_settings::kAcCapabilityHomeKitTargetMask |
+    kLegacyAcCapabilityUpDownAirflow |
+    kLegacyAcCapabilityLeftRightAirflow;
+constexpr uint8_t kAcCapabilitiesSchemaVersion = 2;
 
 const char* logLevelNameLocal(esp_log_level_t level) {
     switch (level) {
@@ -122,7 +129,7 @@ void formatHomeKitTargetModeMask(uint8_t mask, char* out, size_t out_len) {
 }
 
 void refreshHomeKitTargetModeName() {
-    formatHomeKitTargetModeMask(static_cast<uint8_t>(settings.acCapabilities & device_settings::kAcCapabilityTargetMask),
+    formatHomeKitTargetModeMask(device_settings::homeKitTargetModeMask(),
                                 homekit_target_mode_name,
                                 sizeof(homekit_target_mode_name));
 }
@@ -217,6 +224,30 @@ bool validSetupId(const char* value) {
 bool validAcCapabilities(uint32_t value) {
     return (value & ~device_settings::kAcCapabilityKnownMask) == 0 &&
            (value & device_settings::kAcCapabilityTargetMask) != 0;
+}
+
+uint32_t migrateLegacyAcCapabilities(uint32_t value, bool* migrated) {
+    if (migrated != nullptr) {
+        *migrated = false;
+    }
+    const bool has_new_airflow_bits =
+        (value & (device_settings::kAcCapabilityUpDownAirflow | device_settings::kAcCapabilityLeftRightAirflow)) != 0;
+    if (has_new_airflow_bits || (value & ~kLegacyAcCapabilityKnownMask) != 0) {
+        return value;
+    }
+
+    uint32_t next = value & device_settings::kAcCapabilityHomeKitTargetMask;
+    next |= device_settings::kAcCapabilityTargetDry | device_settings::kAcCapabilityTargetFan;
+    if ((value & kLegacyAcCapabilityUpDownAirflow) != 0) {
+        next |= device_settings::kAcCapabilityUpDownAirflow;
+    }
+    if ((value & kLegacyAcCapabilityLeftRightAirflow) != 0) {
+        next |= device_settings::kAcCapabilityLeftRightAirflow;
+    }
+    if (migrated != nullptr) {
+        *migrated = next != value;
+    }
+    return next;
 }
 
 bool validHomeKitAdvancedMapping(uint8_t value) {
@@ -418,10 +449,23 @@ esp_err_t init() {
     }
 
     uint32_t stored_capabilities = settings.acCapabilities;
+    uint8_t stored_capabilities_version = 0;
+    nvs_get_u8(handle, "ac_caps_v", &stored_capabilities_version);
     err = nvs_get_u32(handle, "ac_caps", &stored_capabilities);
     if (err == ESP_OK) {
+        bool migrated = false;
+        if (stored_capabilities_version < kAcCapabilitiesSchemaVersion) {
+            stored_capabilities = migrateLegacyAcCapabilities(stored_capabilities, &migrated);
+        }
         if (validAcCapabilities(stored_capabilities)) {
             settings.acCapabilities = stored_capabilities;
+            if (migrated || stored_capabilities_version < kAcCapabilitiesSchemaVersion) {
+                nvs_set_u32(handle, "ac_caps", settings.acCapabilities);
+                nvs_set_u8(handle, "ac_caps_v", kAcCapabilitiesSchemaVersion);
+                wrote_defaults = true;
+                ESP_LOGI(TAG, "Migrated legacy ac_caps into 0x%08lx",
+                         static_cast<unsigned long>(settings.acCapabilities));
+            }
         } else {
             ESP_LOGW(TAG, "Invalid AC capabilities in NVS: 0x%08lx; using default 0x%08lx",
                      static_cast<unsigned long>(stored_capabilities),
@@ -433,7 +477,7 @@ esp_err_t init() {
         if (nvs_get_str(handle, "hk_hvac", legacy_hvac, &legacy_hvac_len) == ESP_OK) {
             uint8_t target_mask = 0;
             if (parseHomeKitTargetModeMaskLocal(legacy_hvac, &target_mask)) {
-                settings.acCapabilities = (settings.acCapabilities & ~kAcCapabilityTargetMask) | target_mask;
+                settings.acCapabilities = (settings.acCapabilities & ~device_settings::kAcCapabilityHomeKitTargetMask) | target_mask;
                 ESP_LOGI(TAG, "Migrated legacy hk_hvac=%s into ac_caps=0x%08lx",
                          legacy_hvac,
                          static_cast<unsigned long>(settings.acCapabilities));
@@ -442,6 +486,7 @@ esp_err_t init() {
             }
         }
         nvs_set_u32(handle, "ac_caps", settings.acCapabilities);
+        nvs_set_u8(handle, "ac_caps_v", kAcCapabilitiesSchemaVersion);
         wrote_defaults = true;
     } else {
         ESP_LOGW(TAG, "Failed reading AC capabilities: %s; using default", esp_err_to_name(err));
@@ -621,11 +666,34 @@ uint32_t acCapabilities() {
 }
 
 uint8_t homeKitTargetModeMask() {
-    return static_cast<uint8_t>(settings.acCapabilities & kAcCapabilityTargetMask);
+    const uint8_t mask = static_cast<uint8_t>(settings.acCapabilities & kAcCapabilityHomeKitTargetMask);
+    return mask != 0 ? mask : kHomeKitTargetCoolMask;
 }
 
 const char* homeKitTargetModeMaskName() {
     return homekit_target_mode_name;
+}
+
+bool supportsMode(const char* mode) {
+    if (mode == nullptr) {
+        return false;
+    }
+    if (std::strcmp(mode, "AUTO") == 0) {
+        return (settings.acCapabilities & kAcCapabilityTargetAuto) != 0;
+    }
+    if (std::strcmp(mode, "HEAT") == 0) {
+        return (settings.acCapabilities & kAcCapabilityTargetHeat) != 0;
+    }
+    if (std::strcmp(mode, "COOL") == 0) {
+        return (settings.acCapabilities & kAcCapabilityTargetCool) != 0;
+    }
+    if (std::strcmp(mode, "DRY") == 0) {
+        return (settings.acCapabilities & kAcCapabilityTargetDry) != 0;
+    }
+    if (std::strcmp(mode, "FAN") == 0) {
+        return (settings.acCapabilities & kAcCapabilityTargetFan) != 0;
+    }
+    return false;
 }
 
 bool supportsUpDownAirflow() {
@@ -835,6 +903,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     nvs_set_u8(handle, "hk_airtile", next.homeKitSeparateAirflowTile ? 1 : 0);
     nvs_set_u8(handle, "hk_map", next.homeKitAdvancedMapping);
     nvs_set_u32(handle, "ac_caps", next.acCapabilities);
+    nvs_set_u8(handle, "ac_caps_v", kAcCapabilitiesSchemaVersion);
     nvs_erase_key(handle, "hk_hvac");
     nvs_set_u8(handle, "use_real", next.useRealCn105 ? 1 : 0);
     nvs_set_i32(handle, "led_pin", next.statusLedPin);

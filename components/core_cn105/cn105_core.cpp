@@ -151,15 +151,16 @@ uint8_t encodeHighPrecisionTemperatureF(int fahrenheit) {
     return static_cast<uint8_t>(std::lround(celsius * 2.0f) + 128);
 }
 
-// Precise F-to-half-C mapping matching Mitsubishi's expected values.
+// Mitsubishi's Fahrenheit remotes use a lookup table rather than plain math.
+// Keep target SET write/read on the same table so 69F does not round-trip as 70F.
 // Each entry is {fahrenheit, celsius_x10} where celsius_x10 is 0.1C units.
 struct FahrenheitEntry { int f; int c10; };
 static const FahrenheitEntry F_TO_C[] = {
     {50,100},{51,105},{52,110},{53,115},{54,120},{55,125},{56,135},{57,140},
-    {58,145},{59,150},{60,155},{61,160},{62,165},{63,170},{64,175},{65,185},
-    {66,190},{67,195},{68,200},{69,210},{70,210},{71,215},{72,220},{73,230},
+    {58,145},{59,150},{60,155},{61,160},{62,165},{63,170},{64,175},{65,180},
+    {66,185},{67,190},{68,200},{69,210},{70,215},{71,220},{72,225},{73,230},
     {74,235},{75,240},{76,245},{77,250},{78,255},{79,260},{80,265},{81,270},
-    {82,280},{83,285},{84,290},{85,295},{86,300},{87,305},{88,310},
+    {82,275},{83,280},{84,285},{85,290},{86,295},{87,300},{88,305},
 };
 constexpr int kFTableSize = sizeof(F_TO_C) / sizeof(F_TO_C[0]);
 
@@ -172,6 +173,20 @@ float lookupCelsiusForFahrenheit(int fahrenheit) {
     return fahrenheitToCn105Celsius(fahrenheit);
 }
 
+int lookupFahrenheitForTargetCelsius(float celsius) {
+    int best_f = cn105CelsiusToFahrenheit(celsius);
+    float best_delta = 1000.0f;
+    for (int i = 0; i < kFTableSize; ++i) {
+        const float entry_c = static_cast<float>(F_TO_C[i].c10) / 10.0f;
+        const float delta = std::fabs(entry_c - celsius);
+        if (delta < best_delta) {
+            best_delta = delta;
+            best_f = F_TO_C[i].f;
+        }
+    }
+    return best_f;
+}
+
 uint8_t encodeLegacyTemperatureByte(float celsius) {
     int whole = static_cast<int>(celsius + 0.25f);
     if (whole < 16) whole = 16;
@@ -181,11 +196,11 @@ uint8_t encodeLegacyTemperatureByte(float celsius) {
 
 int decodeTemperatureF(uint8_t legacyByte, uint8_t highPrecisionByte) {
     if (highPrecisionByte != 0x00) {
-        return cn105CelsiusToFahrenheit((static_cast<float>(highPrecisionByte) - 128.0f) / 2.0f);
+        return lookupFahrenheitForTargetCelsius((static_cast<float>(highPrecisionByte) - 128.0f) / 2.0f);
     }
 
     const int celsius = lookupInt(TEMP_MAP, TEMP, 16, legacyByte, 25);
-    return cn105CelsiusToFahrenheit(static_cast<float>(celsius));
+    return lookupFahrenheitForTargetCelsius(static_cast<float>(celsius));
 }
 
 int hexValue(char c) {
@@ -610,6 +625,17 @@ void setConnected(bool connected) {
 }
 
 bool runSelfTest(char* error, size_t error_len) {
+    const int target_roundtrip_tests[] = {69, 70, 77};
+    for (const int temp_f : target_roundtrip_tests) {
+        const float encoded_c = lookupCelsiusForFahrenheit(temp_f);
+        const uint8_t encoded = static_cast<uint8_t>(std::lround(encoded_c * 2.0f) + 128);
+        const int decoded_f = decodeTemperatureF(0, encoded);
+        if (decoded_f != temp_f) {
+            std::snprintf(error, error_len, "%dF target roundtrip failed: decoded %dF", temp_f, decoded_f);
+            return false;
+        }
+    }
+
     SetCommand command{};
     command.hasPower = true;
     command.power = "ON";
@@ -659,7 +685,7 @@ bool runSelfTest(char* error, size_t error_len) {
         return false;
     }
 
-    ESP_LOGI(TAG, "CN105 offline self-test passed: 77F SET roundtrip");
+    ESP_LOGI(TAG, "CN105 offline self-test passed: Fahrenheit target and 77F SET roundtrips");
     return true;
 }
 

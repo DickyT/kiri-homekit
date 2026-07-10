@@ -22,10 +22,14 @@ namespace device_settings {
 inline constexpr uint32_t kAcCapabilityTargetAuto = 1u << 0;
 inline constexpr uint32_t kAcCapabilityTargetHeat = 1u << 1;
 inline constexpr uint32_t kAcCapabilityTargetCool = 1u << 2;
-inline constexpr uint32_t kAcCapabilityUpDownAirflow = 1u << 3;
-inline constexpr uint32_t kAcCapabilityLeftRightAirflow = 1u << 4;
-inline constexpr uint32_t kAcCapabilityTargetMask =
+inline constexpr uint32_t kAcCapabilityTargetDry = 1u << 3;
+inline constexpr uint32_t kAcCapabilityTargetFan = 1u << 4;
+inline constexpr uint32_t kAcCapabilityUpDownAirflow = 1u << 5;
+inline constexpr uint32_t kAcCapabilityLeftRightAirflow = 1u << 6;
+inline constexpr uint32_t kAcCapabilityHomeKitTargetMask =
     kAcCapabilityTargetAuto | kAcCapabilityTargetHeat | kAcCapabilityTargetCool;
+inline constexpr uint32_t kAcCapabilityTargetMask = kAcCapabilityHomeKitTargetMask |
+    kAcCapabilityTargetDry | kAcCapabilityTargetFan;
 inline constexpr uint32_t kAcCapabilityAirflowMask =
     kAcCapabilityUpDownAirflow | kAcCapabilityLeftRightAirflow;
 inline constexpr uint32_t kAcCapabilityKnownMask = kAcCapabilityTargetMask | kAcCapabilityAirflowMask;
@@ -34,7 +38,7 @@ inline constexpr uint32_t kAcCapabilityDefault = kAcCapabilityKnownMask;
 inline constexpr uint8_t kHomeKitTargetAutoMask = static_cast<uint8_t>(kAcCapabilityTargetAuto);
 inline constexpr uint8_t kHomeKitTargetHeatMask = static_cast<uint8_t>(kAcCapabilityTargetHeat);
 inline constexpr uint8_t kHomeKitTargetCoolMask = static_cast<uint8_t>(kAcCapabilityTargetCool);
-inline constexpr uint8_t kHomeKitTargetAllMask = static_cast<uint8_t>(kAcCapabilityTargetMask);
+inline constexpr uint8_t kHomeKitTargetAllMask = static_cast<uint8_t>(kAcCapabilityHomeKitTargetMask);
 
 inline constexpr uint8_t kHomeKitMapUpDownTilt = 1u << 0;
 inline constexpr uint8_t kHomeKitMapLeftRightTilt = 1u << 1;
@@ -93,6 +97,7 @@ bool homeKitMapsLeftRightSwing();
 uint32_t acCapabilities();
 uint8_t homeKitTargetModeMask();
 const char* homeKitTargetModeMaskName();
+bool supportsMode(const char* mode);
 bool supportsUpDownAirflow();
 bool supportsLeftRightAirflow();
 bool useRealCn105();

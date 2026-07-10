@@ -286,10 +286,7 @@ int lAcSetMode(lua_State* L) {
     if (!known) {
         return luaL_error(L, "ac.set_mode: expected AUTO, HEAT, COOL, DRY, or FAN");
     }
-    const uint32_t capabilities = device_settings::acCapabilities();
-    if ((std::strcmp(mode, "AUTO") == 0 && (capabilities & device_settings::kAcCapabilityTargetAuto) == 0) ||
-        (std::strcmp(mode, "HEAT") == 0 && (capabilities & device_settings::kAcCapabilityTargetHeat) == 0) ||
-        (std::strcmp(mode, "COOL") == 0 && (capabilities & device_settings::kAcCapabilityTargetCool) == 0)) {
+    if (!device_settings::supportsMode(mode)) {
         return luaL_error(L, "ac.set_mode: %s is disabled in AC Capabilities", mode);
     }
     appendAction(L, lua_vm::ActionType::kSetMode, mode, 0);
@@ -597,7 +594,7 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     lua_createtable(L, 0, 2);
     lua_pushinteger(L, lua_vm::kApiVersion);
     lua_setfield(L, -2, "api_version");
-    lua_createtable(L, 0, 5);
+    lua_createtable(L, 0, 7);
     const uint32_t capabilities = device_settings::acCapabilities();
     lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetAuto) != 0);
     lua_setfield(L, -2, "auto_mode");
@@ -605,6 +602,10 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     lua_setfield(L, -2, "heat_mode");
     lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetCool) != 0);
     lua_setfield(L, -2, "cool_mode");
+    lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetDry) != 0);
+    lua_setfield(L, -2, "dry_mode");
+    lua_pushboolean(L, (capabilities & device_settings::kAcCapabilityTargetFan) != 0);
+    lua_setfield(L, -2, "fan_mode");
     lua_pushboolean(L, device_settings::supportsUpDownAirflow());
     lua_setfield(L, -2, "up_down_airflow");
     lua_pushboolean(L, device_settings::supportsLeftRightAirflow());

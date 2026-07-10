@@ -71,13 +71,16 @@ const CN105_ADVANCED_KEYS = [
 ] as const;
 
 const HVAC_TARGET_OPTIONS = [
-  { value: "0", bit: 1 << 0, label: "Auto mode", detail: "The AC can automatically choose between heating and cooling." },
-  { value: "1", bit: 1 << 1, label: "Heating", detail: "The AC can heat the room." },
-  { value: "2", bit: 1 << 2, label: "Cooling", detail: "The AC can cool the room." },
+  { value: "AUTO", bit: 1 << 0, label: "Auto mode", detail: "The Mitsubishi remote has AUTO mode." },
+  { value: "HEAT", bit: 1 << 1, label: "Heating", detail: "The Mitsubishi remote has HEAT mode." },
+  { value: "COOL", bit: 1 << 2, label: "Cooling", detail: "The Mitsubishi remote has COOL mode." },
+  { value: "DRY", bit: 1 << 3, label: "Dry", detail: "The Mitsubishi remote has DRY/dehumidify mode. Kiri Web UI only; Apple Home cannot show this mode." },
+  { value: "FAN", bit: 1 << 4, label: "Fan only", detail: "The Mitsubishi remote has FAN mode. Kiri Web UI only; Apple Home cannot show this mode." },
 ] as const;
-const AC_CAP_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2);
-const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
-const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 4;
+const AC_CAP_HOMEKIT_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2);
+const AC_CAP_TARGET_MASK = AC_CAP_HOMEKIT_TARGET_MASK | (1 << 3) | (1 << 4);
+const AC_CAP_UP_DOWN_AIRFLOW = 1 << 5;
+const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 6;
 const AC_CAP_KNOWN_MASK = AC_CAP_TARGET_MASK | AC_CAP_UP_DOWN_AIRFLOW | AC_CAP_LEFT_RIGHT_AIRFLOW;
 const AC_CAP_DEFAULT = AC_CAP_KNOWN_MASK;
 const HK_MAP_UP_DOWN_TILT = 1 << 0;
@@ -186,7 +189,7 @@ function normalizeHvacModes(value: string | undefined): string {
     const v = token.trim();
     if (v === "0" || v === "1" || v === "2") values.add(v);
   }
-  const ordered = HVAC_TARGET_OPTIONS.map((o) => o.value).filter((v) => values.has(v));
+  const ordered = ["0", "1", "2"].filter((v) => values.has(v));
   return ordered.length ? ordered.join(",") : "0,1,2";
 }
 
@@ -196,7 +199,7 @@ function normalizeAcCapabilities(value: number | string | undefined, fallbackHva
     caps = AC_CAP_DEFAULT;
     if (fallbackHvacModes) {
       const targetBits = normalizeHvacModes(fallbackHvacModes).split(",").reduce((acc, v) => acc | (1 << Number(v)), 0);
-      caps = (caps & ~AC_CAP_TARGET_MASK) | targetBits;
+      caps = (caps & ~AC_CAP_HOMEKIT_TARGET_MASK) | targetBits;
     }
   }
   caps &= AC_CAP_KNOWN_MASK;
@@ -248,7 +251,7 @@ function acCapabilitiesDescription(caps: number): string {
     : airflow.length === 1
       ? airflow[0]
       : `${airflow[0]} and ${airflow[1]}`;
-  return `Kiri will expose ${modeText}, with ${airflowText}.`;
+  return `Kiri Web UI will expose ${modeText}, with ${airflowText}. Apple Home can only expose Auto, Heat, and Cool.`;
 }
 
 function acCapabilitiesSummary(value: string | undefined): string {
@@ -373,7 +376,7 @@ export function AdminPage(): JSX.Element {
   const otaInputRef = useRef<HTMLInputElement>(null);
   const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
   const capabilitiesHvacChanged = capabilitiesSnapshot !== null
-    && ((normalizeAcCapabilities(capabilitiesSnapshot) ^ currentAcCapabilities) & AC_CAP_TARGET_MASK) !== 0;
+    && ((normalizeAcCapabilities(capabilitiesSnapshot) ^ currentAcCapabilities) & AC_CAP_HOMEKIT_TARGET_MASK) !== 0;
   const currentHomeKitMapping = normalizeHomeKitMapping(settings["cfg-homekit-advanced-mapping"]);
   let effectiveHomeKitMapping = 0;
   if ((currentAcCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0) {
@@ -386,7 +389,7 @@ export function AdminPage(): JSX.Element {
   const homeKitPresentationChanged =
     (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
     currentHomeKitMapping !== savedHomeKitMapping ||
-    (currentAcCapabilities & AC_CAP_TARGET_MASK) !== (savedAcCapabilities & AC_CAP_TARGET_MASK);
+    (currentAcCapabilities & AC_CAP_HOMEKIT_TARGET_MASK) !== (savedAcCapabilities & AC_CAP_HOMEKIT_TARGET_MASK);
 
   // Bootstrap settings from first status that arrives.
   useEffect(() => {

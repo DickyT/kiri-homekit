@@ -21,9 +21,17 @@ type FormState = {
 };
 
 const FORM_DEFAULT: FormState = { power: "OFF", mode: "AUTO", temp: "77", fan: "AUTO", vane: "AUTO", wide: "|" };
-const AC_CAP_DEFAULT = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
-const AC_CAP_UP_DOWN_AIRFLOW = 1 << 3;
-const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 4;
+const MODE_OPTIONS = [
+  { value: "AUTO", bit: 1 << 0 },
+  { value: "HEAT", bit: 1 << 1 },
+  { value: "COOL", bit: 1 << 2 },
+  { value: "DRY", bit: 1 << 3 },
+  { value: "FAN", bit: 1 << 4 },
+] as const;
+const AC_CAP_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
+const AC_CAP_DEFAULT = AC_CAP_TARGET_MASK | (1 << 5) | (1 << 6);
+const AC_CAP_UP_DOWN_AIRFLOW = 1 << 5;
+const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 6;
 
 function fromMock(m: Cn105MockState): FormState {
   return {
@@ -141,6 +149,7 @@ export function ControlPage(): JSX.Element {
   const s = status.value;
   const m = s?.cn105.mock_state;
   const acCapabilities = s?.config?.ac_capabilities ?? AC_CAP_DEFAULT;
+  const modeOptions = MODE_OPTIONS.filter((option) => (acCapabilities & option.bit) !== 0);
   const supportsUpDownAirflow = (acCapabilities & AC_CAP_UP_DOWN_AIRFLOW) !== 0;
   const supportsLeftRightAirflow = (acCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0;
   const wifiText = s?.wifi.connected
@@ -186,7 +195,7 @@ export function ControlPage(): JSX.Element {
           </Field>
           <Field label="Mode">
             <select value={form.mode} disabled={busy} onChange={(e) => update("mode", (e.target as HTMLSelectElement).value)}>
-              <option>COOL</option><option>HEAT</option><option>DRY</option><option>FAN</option><option>AUTO</option>
+              {modeOptions.map((option) => <option key={option.value}>{option.value}</option>)}
             </select>
           </Field>
         </div>
