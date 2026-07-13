@@ -1054,13 +1054,11 @@ export function AdminPage(): JSX.Element {
         </div>
         <div class="info-banner" style={{ marginTop: "18px" }}>
           <strong>Original Swing control</strong>
-          {(effectiveHomeKitMapping & (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)) === (HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING)
-            ? "Both dedicated Swing switches are enabled, so the original Swing control is removed from the AC/Airflow service."
-            : (effectiveHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
-              ? "The original Swing control remains visible, but it controls only Left/Right Swing when that airflow axis is supported. Up/Down Swing belongs exclusively to its dedicated switch."
-              : (effectiveHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
-                ? "The original Swing control remains visible, but it controls only Up/Down Swing when that airflow axis is supported. Left/Right Swing belongs exclusively to its dedicated switch."
-                : "No dedicated Swing switches are enabled. The original Swing control continues to operate every supported airflow axis."}
+          {(effectiveHomeKitMapping & HK_MAP_UP_DOWN_SWING) !== 0
+            ? "The Airflow fan tile's Swing control is hidden because Up/Down Swing belongs to its dedicated switch."
+            : (effectiveHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
+              ? "The Airflow fan tile keeps its Swing control for Up/Down oscillation. Left/Right oscillation belongs to its dedicated switch."
+              : "The Airflow fan tile keeps its Swing control for Up/Down oscillation."}
         </div>
         <div class="modal-actions">
           <Btn variant="primary" onClick={() => closeMapping(true)}>Confirm</Btn>

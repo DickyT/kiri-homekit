@@ -77,12 +77,8 @@ hap_char_t* fan_rotation_speed_char = nullptr;
 hap_char_t* fan_swing_mode_char = nullptr;
 hap_char_t* up_down_current_position_char = nullptr;
 hap_char_t* up_down_target_position_char = nullptr;
-hap_char_t* up_down_current_tilt_char = nullptr;
-hap_char_t* up_down_target_tilt_char = nullptr;
 hap_char_t* left_right_current_position_char = nullptr;
 hap_char_t* left_right_target_position_char = nullptr;
-hap_char_t* left_right_current_tilt_char = nullptr;
-hap_char_t* left_right_target_tilt_char = nullptr;
 hap_char_t* up_down_swing_on_char = nullptr;
 hap_char_t* left_right_swing_on_char = nullptr;
 char setup_payload[128] = "";
@@ -286,13 +282,17 @@ const char* percentToFan(float percent) {
 }
 
 bool legacySwingControlsUpDown() {
-    return device_settings::supportsUpDownAirflow() &&
-           (!device_settings::homeKitSeparateAirflowTile() || !device_settings::homeKitMapsUpDownSwing());
+    if (!device_settings::homeKitSeparateAirflowTile()) {
+        return device_settings::supportsUpDownAirflow();
+    }
+    return !(device_settings::supportsUpDownAirflow() && device_settings::homeKitMapsUpDownSwing());
 }
 
 bool legacySwingControlsLeftRight() {
-    return device_settings::supportsLeftRightAirflow() &&
-           (!device_settings::homeKitSeparateAirflowTile() || !device_settings::homeKitMapsLeftRightSwing());
+    if (!device_settings::homeKitSeparateAirflowTile()) {
+        return device_settings::supportsLeftRightAirflow();
+    }
+    return false;
 }
 
 bool mapsUpDownTilt() {
@@ -319,8 +319,8 @@ bool mapsLeftRightSwing() {
            device_settings::homeKitMapsLeftRightSwing();
 }
 
-bool hideLegacySwing() {
-    return mapsUpDownSwing() && mapsLeftRightSwing();
+bool hideAirflowFanSwing() {
+    return mapsUpDownSwing();
 }
 
 uint8_t swingFromMock(const cn105_core::MockState& state) {
@@ -410,15 +410,6 @@ void updateCharFloat(hap_char_t* character, float value) {
     }
     hap_val_t hap_value = {};
     hap_value.f = value;
-    hap_char_update_val(character, &hap_value);
-}
-
-void updateCharInt(hap_char_t* character, int value) {
-    if (character == nullptr) {
-        return;
-    }
-    hap_val_t hap_value = {};
-    hap_value.i = value;
     hap_char_update_val(character, &hap_value);
 }
 
@@ -519,19 +510,9 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         }
         return true;
     }
-    if (character == up_down_target_tilt_char) {
-        command->hasVane = true;
-        command->vane = vaneFromHorizontalTilt(value.i);
-        return true;
-    }
     if (character == up_down_target_position_char) {
         command->hasVane = true;
         command->vane = vaneFromHorizontalTilt(tiltFromPosition(value.u));
-        return true;
-    }
-    if (character == left_right_target_tilt_char) {
-        command->hasWideVane = true;
-        command->wideVane = wideVaneFromVerticalTilt(value.i);
         return true;
     }
     if (character == left_right_target_position_char) {
@@ -766,7 +747,7 @@ esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
     std::snprintf(airflow_service_name, sizeof(airflow_service_name), "%s Airflow", device_settings::deviceName());
     int ret = hap_serv_add_char(airflow_fan, hap_char_name_create(hapString(airflow_service_name)));
     ret |= hap_serv_add_char(airflow_fan, hap_char_rotation_speed_create(fanToPercent(state.fan)));
-    if (!hideLegacySwing()) {
+    if (!hideAirflowFanSwing()) {
         ret |= hap_serv_add_char(airflow_fan, hap_char_swing_mode_create(swingFromMock(state)));
     }
     if (ret != HAP_SUCCESS) {
@@ -781,7 +762,7 @@ esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
     fan_rotation_speed_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_ROTATION_SPEED);
     fan_swing_mode_char = hap_serv_get_char_by_uuid(airflow_fan, HAP_CHAR_UUID_SWING_MODE);
     if (fan_active_char == nullptr || fan_rotation_speed_char == nullptr ||
-        (!hideLegacySwing() && fan_swing_mode_char == nullptr)) {
+        (!hideAirflowFanSwing() && fan_swing_mode_char == nullptr)) {
         setLastError("airflow fan characteristic lookup failed");
         return ESP_FAIL;
     }
@@ -808,15 +789,8 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
                   "%s Airflow Tilt",
                   up_down ? "Up/Down" : "Left/Right");
     int ret = addServiceNames(service, service_name);
-    if (up_down) {
-        ret |= hap_serv_add_char(service, hap_char_current_horizontal_tilt_angle_create(current_tilt));
-        ret |= hap_serv_add_char(service, hap_char_target_horizontal_tilt_angle_create(target_tilt));
-    } else {
-        ret |= hap_serv_add_char(service, hap_char_current_vertical_tilt_angle_create(current_tilt));
-        ret |= hap_serv_add_char(service, hap_char_target_vertical_tilt_angle_create(target_tilt));
-    }
     if (ret != HAP_SUCCESS) {
-        setLastError("failed to add tilt characteristics");
+        setLastError("failed to add airflow position service name");
         return ESP_FAIL;
     }
 
@@ -826,21 +800,15 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
     if (up_down) {
         up_down_current_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_POSITION);
         up_down_target_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_POSITION);
-        up_down_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_HORIZONTAL_TILT_ANGLE);
-        up_down_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_HORIZONTAL_TILT_ANGLE);
-        if (up_down_current_position_char == nullptr || up_down_target_position_char == nullptr ||
-            up_down_current_tilt_char == nullptr || up_down_target_tilt_char == nullptr) {
-            setLastError("up/down tilt characteristic lookup failed");
+        if (up_down_current_position_char == nullptr || up_down_target_position_char == nullptr) {
+            setLastError("up/down airflow position characteristic lookup failed");
             return ESP_FAIL;
         }
     } else {
         left_right_current_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_POSITION);
         left_right_target_position_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_POSITION);
-        left_right_current_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_CURRENT_VERTICAL_TILT_ANGLE);
-        left_right_target_tilt_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_TARGET_VERTICAL_TILT_ANGLE);
-        if (left_right_current_position_char == nullptr || left_right_target_position_char == nullptr ||
-            left_right_current_tilt_char == nullptr || left_right_target_tilt_char == nullptr) {
-            setLastError("left/right tilt characteristic lookup failed");
+        if (left_right_current_position_char == nullptr || left_right_target_position_char == nullptr) {
+            setLastError("left/right airflow position characteristic lookup failed");
             return ESP_FAIL;
         }
     }
@@ -1044,15 +1012,11 @@ void syncFromMock() {
     const int up_down_current_tilt = equals(state.power, "OFF") ? -90 : up_down_target_tilt;
     updateCharUInt8(up_down_current_position_char, positionFromTilt(up_down_current_tilt));
     updateCharUInt8(up_down_target_position_char, positionFromTilt(up_down_target_tilt));
-    updateCharInt(up_down_current_tilt_char, up_down_current_tilt);
-    updateCharInt(up_down_target_tilt_char, up_down_target_tilt);
     updateCharBool(up_down_swing_on_char, up_down_swing);
     const bool left_right_swing = leftRightSwingFromMock(state);
     const int left_right_tilt = verticalTiltFromWideVane(state.wideVane);
     updateCharUInt8(left_right_current_position_char, positionFromTilt(left_right_tilt));
     updateCharUInt8(left_right_target_position_char, positionFromTilt(left_right_tilt));
-    updateCharInt(left_right_current_tilt_char, left_right_tilt);
-    updateCharInt(left_right_target_tilt_char, left_right_tilt);
     updateCharBool(left_right_swing_on_char, left_right_swing);
 }
 
