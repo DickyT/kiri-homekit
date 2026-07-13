@@ -179,6 +179,29 @@ stored in NVS.
 
 </details>
 
+<details>
+<summary><strong>Dry and Fan-Only HomeKit switches</strong></summary>
+
+When Separate airflow tile is enabled, Advanced HomeKit Mapping can expose
+CN105 modes that Apple's Heater Cooler service cannot represent:
+
+- **Dry Mode** starts Mitsubishi DRY/dehumidify mode.
+- **Fan-Only Mode** starts Mitsubishi FAN mode without requesting heating or
+  cooling.
+- The switches are mutually exclusive. Enabling one turns the other off.
+- Turning the active switch off restores the prior Auto, Heat, or Cool mode
+  and the prior power state.
+- While either special mode is active, the main AC tile reports Off because
+  Heater Cooler has no Dry or Fan target state. The dedicated switch and the
+  Airflow tile continue to report the real operating state.
+
+Both mappings default to enabled, but their services are created only when
+Separate airflow tile is selected and the corresponding mode remains enabled
+under AC Capabilities. Changing this service layout may require removing and
+re-adding Kiri Bridge in Apple Home after Save and Reboot.
+
+</details>
+
 ## Local Web Controller
 
 Every production Kiri Bridge hosts a responsive controller at
@@ -370,7 +393,7 @@ provides examples, API completion, syntax preflight, copy, and download.
 The complete versioned contract is in [AUTOMATION.md](./AUTOMATION.md).
 
 <details>
-<summary><strong>Automation API v1</strong></summary>
+<summary><strong>Automation API v2</strong></summary>
 
 - Hooks for `on_state_changed`, `on_power_on`, and `on_power_off`.
 - Read power, mode, target and room temperature, fan, both airflow axes,

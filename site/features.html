@@ -133,13 +133,19 @@
         <details class="feature-detail">
           <summary><span>AC Capabilities</span><small>hide what the unit cannot do</small></summary>
           <div class="feature-detail-body">
-            <p>Tell Kiri whether the unit supports Auto, Heat, Cool, up/down airflow, and motorized left/right airflow. The selection controls both the local WebUI and which HomeKit modes and advanced services are advertised.</p>
+            <p>Tell Kiri whether the unit supports Auto, Heat, Cool, Dry, Fan Only, up/down airflow, and motorized left/right airflow. The selection controls both the local WebUI and which HomeKit modes and advanced services are advertised.</p>
           </div>
         </details>
         <details class="feature-detail">
           <summary><span>Advanced airflow mapping</span><small>tilt and swing by axis</small></summary>
           <div class="feature-detail-body">
             <p>Optionally expose up/down and left/right fixed positions as separately named Window Covering-style services, plus dedicated Swing switches for either axis. Legacy Swing continues to control any axis that has not received its own switch; when both switches exist, the combined control is removed to avoid duplication.</p>
+          </div>
+        </details>
+        <details class="feature-detail">
+          <summary><span>Dry and Fan-Only switches</span><small>CN105 modes beyond Heater Cooler</small></summary>
+          <div class="feature-detail-body">
+            <p>Optionally expose mutually exclusive Dry Mode and Fan-Only Mode switches when the matching AC Capabilities are enabled. Turning the active switch off restores the previous standard mode and power state. The main AC tile appears Off while either special mode runs because Apple's Heater Cooler service cannot represent Dry or Fan Only.</p>
           </div>
         </details>
       </div>
@@ -291,7 +297,7 @@
       </header>
       <div class="feature-list">
         <details class="feature-detail" open>
-          <summary><span>Safe local rules</span><small>Lua 5.4 · API v1 · bounded execution</small></summary>
+          <summary><span>Safe local rules</span><small>Lua 5.4 · API v2 · bounded execution</small></summary>
           <div class="feature-detail-body">
             <p>The constrained Lua 5.4 engine can react to state changes and power events, read CN105 telemetry, change climate and airflow settings, retain small values in NVS, and write to the Kiri log.</p>
             <p>Scripts are validated and atomically saved with a last-known-good copy. Memory, instructions, actions, and persistent storage are bounded; feedback loops and action storms are automatically stopped. The latest runs and CN105 confirmation result remain visible in Admin.</p>

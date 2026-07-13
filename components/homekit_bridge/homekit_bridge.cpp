@@ -63,6 +63,8 @@ hap_serv_t* up_down_tilt_service = nullptr;
 hap_serv_t* left_right_tilt_service = nullptr;
 hap_serv_t* up_down_swing_service = nullptr;
 hap_serv_t* left_right_swing_service = nullptr;
+hap_serv_t* dry_mode_service = nullptr;
+hap_serv_t* fan_mode_service = nullptr;
 hap_char_t* active_char = nullptr;
 hap_char_t* current_temp_char = nullptr;
 hap_char_t* current_state_char = nullptr;
@@ -81,14 +83,30 @@ hap_char_t* left_right_current_position_char = nullptr;
 hap_char_t* left_right_target_position_char = nullptr;
 hap_char_t* up_down_swing_on_char = nullptr;
 hap_char_t* left_right_swing_on_char = nullptr;
+hap_char_t* dry_mode_on_char = nullptr;
+hap_char_t* fan_mode_on_char = nullptr;
 char setup_payload[128] = "";
 char airflow_service_name[96] = "";
 char up_down_tilt_service_name[96] = "";
 char left_right_tilt_service_name[96] = "";
 char up_down_swing_service_name[96] = "";
 char left_right_swing_service_name[96] = "";
+char dry_mode_service_name[96] = "";
+char fan_mode_service_name[96] = "";
 char last_event[40] = "not-started";
 char last_error[96] = "";
+
+enum class SpecialMode : uint8_t {
+    kNone,
+    kDry,
+    kFan,
+};
+
+SpecialMode requested_special_mode = SpecialMode::kNone;
+char last_standard_mode[8] = "COOL";
+char restore_mode[8] = "COOL";
+bool restore_power_on = true;
+bool restore_context_valid = false;
 
 char* hapString(const char* value) {
     return const_cast<char*>(value);
@@ -113,26 +131,51 @@ bool equals(const char* left, const char* right) {
     return left != nullptr && right != nullptr && std::strcmp(left, right) == 0;
 }
 
-float fahrenheitToCelsius(int value_f) {
-    return (static_cast<float>(value_f) - 32.0f) * 5.0f / 9.0f;
+bool isStandardMode(const char* mode) {
+    return equals(mode, "AUTO") || equals(mode, "HEAT") || equals(mode, "COOL");
 }
 
-int celsiusToRoundedFahrenheit(float value_c) {
-    return static_cast<int>(std::lround((value_c * 9.0f / 5.0f) + 32.0f));
-}
-
-int clampFahrenheit(int value_f) {
-    if (value_f < 50) {
-        return 50;
+SpecialMode specialModeFromName(const char* mode) {
+    if (equals(mode, "DRY")) {
+        return SpecialMode::kDry;
     }
-    if (value_f > 88) {
-        return 88;
+    if (equals(mode, "FAN")) {
+        return SpecialMode::kFan;
     }
-    return value_f;
+    return SpecialMode::kNone;
 }
 
-uint8_t activeFromMock(const cn105_core::MockState& state) {
+const char* specialModeName(SpecialMode mode) {
+    switch (mode) {
+        case SpecialMode::kDry: return "DRY";
+        case SpecialMode::kFan: return "FAN";
+        case SpecialMode::kNone: return nullptr;
+    }
+    return nullptr;
+}
+
+SpecialMode activeSpecialModeFromMock(const cn105_core::MockState& state) {
+    return equals(state.power, "ON") ? specialModeFromName(state.mode) : SpecialMode::kNone;
+}
+
+cn105_core::HalfDegreesC clampTargetHalfC(cn105_core::HalfDegreesC half_c) {
+    if (half_c < cn105_core::kMinTargetHalfC) {
+        return cn105_core::kMinTargetHalfC;
+    }
+    if (half_c > cn105_core::kMaxTargetHalfC) {
+        return cn105_core::kMaxTargetHalfC;
+    }
+    return half_c;
+}
+
+uint8_t physicalActiveFromMock(const cn105_core::MockState& state) {
     return equals(state.power, "ON") ? kActive : kInactive;
+}
+
+uint8_t heaterCoolerActiveFromMock(const cn105_core::MockState& state) {
+    return physicalActiveFromMock(state) == kActive && activeSpecialModeFromMock(state) == SpecialMode::kNone
+               ? kActive
+               : kInactive;
 }
 
 uint8_t targetBit(uint8_t target_state) {
@@ -177,7 +220,7 @@ uint8_t targetStateFromMock(const cn105_core::MockState& state) {
 }
 
 uint8_t currentStateFromMock(const cn105_core::MockState& state) {
-    if (equals(state.power, "OFF")) {
+    if (heaterCoolerActiveFromMock(state) == kInactive) {
         return kCurrentInactive;
     }
     if (!state.operating) {
@@ -193,7 +236,7 @@ uint8_t currentStateFromMock(const cn105_core::MockState& state) {
         return can_report_cooling ? kCurrentCooling : kCurrentIdle;
     }
     if (equals(state.mode, "AUTO")) {
-        if (state.roomTemperatureF < state.targetTemperatureF) {
+        if (state.roomTemperatureHalfC < state.targetTemperatureHalfC) {
             return can_report_heating ? kCurrentHeating : kCurrentIdle;
         }
         return can_report_cooling ? kCurrentCooling : kCurrentIdle;
@@ -210,6 +253,54 @@ const char* modeFromTargetState(uint8_t target_state) {
         default:
             return "AUTO";
     }
+}
+
+const char* fallbackStandardMode() {
+    return modeFromTargetState(fallbackTargetState(device_settings::homeKitTargetModeMask()));
+}
+
+void copyMode(char* out, size_t out_len, const char* mode) {
+    std::snprintf(out, out_len, "%s", mode == nullptr ? "" : mode);
+}
+
+void rememberStandardMode(const char* mode) {
+    if (isStandardMode(mode)) {
+        copyMode(last_standard_mode, sizeof(last_standard_mode), mode);
+    }
+}
+
+void ensureRestoreContext(const cn105_core::MockState& state) {
+    if (restore_context_valid) {
+        return;
+    }
+    restore_power_on = equals(state.power, "ON");
+    const char* previous_mode = isStandardMode(state.mode) ? state.mode : last_standard_mode;
+    if (!isStandardMode(previous_mode) || !device_settings::supportsMode(previous_mode)) {
+        previous_mode = fallbackStandardMode();
+    }
+    copyMode(restore_mode, sizeof(restore_mode), previous_mode);
+    restore_context_valid = true;
+}
+
+void clearRestoreContext() {
+    restore_context_valid = false;
+    restore_power_on = true;
+    copyMode(restore_mode, sizeof(restore_mode), last_standard_mode);
+}
+
+void observeConfirmedModeState(const cn105_core::MockState& state) {
+    const SpecialMode actual = activeSpecialModeFromMock(state);
+    if (actual != SpecialMode::kNone) {
+        ensureRestoreContext(state);
+        requested_special_mode = actual;
+        return;
+    }
+
+    if (isStandardMode(state.mode)) {
+        rememberStandardMode(state.mode);
+    }
+    requested_special_mode = SpecialMode::kNone;
+    clearRestoreContext();
 }
 
 void applyHvacModeValidValues() {
@@ -317,6 +408,18 @@ bool mapsLeftRightSwing() {
     return device_settings::homeKitSeparateAirflowTile() &&
            device_settings::supportsLeftRightAirflow() &&
            device_settings::homeKitMapsLeftRightSwing();
+}
+
+bool mapsDryModeSwitch() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::supportsMode("DRY") &&
+           device_settings::homeKitMapsDryModeSwitch();
+}
+
+bool mapsFanModeSwitch() {
+    return device_settings::homeKitSeparateAirflowTile() &&
+           device_settings::supportsMode("FAN") &&
+           device_settings::homeKitMapsFanModeSwitch();
 }
 
 bool hideAirflowFanSwing() {
@@ -459,7 +562,21 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
     if (command == nullptr) {
         return false;
     }
-    if (character == active_char || character == fan_active_char) {
+    if (character == active_char) {
+        command->hasPower = true;
+        command->power = value.u == kActive ? "ON" : "OFF";
+        if (value.u == kActive) {
+            const cn105_core::MockState state = cn105_core::getMockState();
+            if (requested_special_mode != SpecialMode::kNone ||
+                activeSpecialModeFromMock(state) != SpecialMode::kNone) {
+                ensureRestoreContext(state);
+                command->hasMode = true;
+                command->mode = restore_mode;
+            }
+        }
+        return true;
+    }
+    if (character == fan_active_char) {
         command->hasPower = true;
         command->power = value.u == kActive ? "ON" : "OFF";
         return true;
@@ -476,8 +593,8 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
         return true;
     }
     if (character == cooling_threshold_char || character == heating_threshold_char) {
-        command->hasTemperatureF = true;
-        command->temperatureF = clampFahrenheit(celsiusToRoundedFahrenheit(value.f));
+        command->hasTargetTemperature = true;
+        command->targetTemperatureHalfC = clampTargetHalfC(cn105_core::celsiusToHalfDegrees(value.f));
         return true;
     }
     if (character == rotation_speed_char || character == fan_rotation_speed_char) {
@@ -533,13 +650,26 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
     return false;
 }
 
-void syncActiveCharsFromCommand(const cn105_core::SetCommand& command) {
-    if (!command.hasPower) {
-        return;
+void noteAcceptedCommand(const cn105_core::SetCommand& command) {
+    if (command.hasMode && isStandardMode(command.mode)) {
+        rememberStandardMode(command.mode);
+        requested_special_mode = SpecialMode::kNone;
+        clearRestoreContext();
+    } else if (command.hasPower && equals(command.power, "OFF")) {
+        requested_special_mode = SpecialMode::kNone;
+        clearRestoreContext();
     }
-    const uint8_t active = equals(command.power, "ON") ? kActive : kInactive;
-    updateCharUInt8(active_char, active);
-    updateCharUInt8(fan_active_char, active);
+}
+
+void syncModeCharsFromCommand(const cn105_core::SetCommand& command) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    const bool physical_on = command.hasPower ? equals(command.power, "ON") : equals(state.power, "ON");
+    const char* effective_mode = command.hasMode ? command.mode : state.mode;
+    const SpecialMode special = physical_on ? specialModeFromName(effective_mode) : SpecialMode::kNone;
+    updateCharUInt8(active_char, physical_on && special == SpecialMode::kNone ? kActive : kInactive);
+    updateCharUInt8(fan_active_char, physical_on ? kActive : kInactive);
+    updateCharBool(dry_mode_on_char, special == SpecialMode::kDry);
+    updateCharBool(fan_mode_on_char, special == SpecialMode::kFan);
 }
 
 void hapEventHandler(void*, esp_event_base_t, int32_t event_id, void*) {
@@ -620,7 +750,8 @@ int heaterCoolerWrite(hap_write_data_t write_data[], int count, void*, void*) {
     }
 
     last_command_us = esp_timer_get_time();
-    syncActiveCharsFromCommand(command);
+    noteAcceptedCommand(command);
+    syncModeCharsFromCommand(command);
     homekit_bridge::syncFromMock();
     setLastEvent("heater-cooler-write");
     return HAP_SUCCESS;
@@ -650,7 +781,8 @@ int airflowFanWrite(hap_write_data_t write_data[], int count, void*, void*) {
     }
 
     last_command_us = esp_timer_get_time();
-    syncActiveCharsFromCommand(command);
+    noteAcceptedCommand(command);
+    syncModeCharsFromCommand(command);
     homekit_bridge::syncFromMock();
     setLastEvent("airflow-fan-write");
     return HAP_SUCCESS;
@@ -684,11 +816,84 @@ int advancedMappingWrite(hap_write_data_t write_data[], int count, void*, void*)
     return HAP_SUCCESS;
 }
 
+int specialModeSwitchWrite(hap_write_data_t write_data[], int count, void*, void*) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    const SpecialMode actual_mode = activeSpecialModeFromMock(state);
+    const SpecialMode previous_requested = requested_special_mode;
+    const bool previous_restore_valid = restore_context_valid;
+    const bool previous_restore_power = restore_power_on;
+    char previous_restore_mode[sizeof(restore_mode)] = {};
+    copyMode(previous_restore_mode, sizeof(previous_restore_mode), restore_mode);
+
+    cn105_core::SetCommand command{};
+    bool should_apply = false;
+    SpecialMode next_requested = requested_special_mode;
+
+    for (int i = 0; i < count; ++i) {
+        SpecialMode target_mode = SpecialMode::kNone;
+        if (write_data[i].hc == dry_mode_on_char) {
+            target_mode = SpecialMode::kDry;
+        } else if (write_data[i].hc == fan_mode_on_char) {
+            target_mode = SpecialMode::kFan;
+        }
+
+        if (target_mode != SpecialMode::kNone) {
+            if (write_data[i].val.b) {
+                ensureRestoreContext(state);
+                command.hasPower = true;
+                command.power = "ON";
+                command.hasMode = true;
+                command.mode = specialModeName(target_mode);
+                next_requested = target_mode;
+                should_apply = true;
+            } else if (requested_special_mode == target_mode ||
+                       (requested_special_mode == SpecialMode::kNone && actual_mode == target_mode)) {
+                ensureRestoreContext(state);
+                command.hasPower = true;
+                command.power = restore_power_on ? "ON" : "OFF";
+                command.hasMode = true;
+                command.mode = restore_mode;
+                next_requested = SpecialMode::kNone;
+                should_apply = true;
+            }
+        }
+
+        if (write_data[i].status != nullptr) {
+            *(write_data[i].status) = HAP_STATUS_SUCCESS;
+        }
+    }
+
+    if (should_apply && !applyCommand(command)) {
+        requested_special_mode = previous_requested;
+        restore_context_valid = previous_restore_valid;
+        restore_power_on = previous_restore_power;
+        copyMode(restore_mode, sizeof(restore_mode), previous_restore_mode);
+        for (int i = 0; i < count; ++i) {
+            if (write_data[i].status != nullptr) {
+                *(write_data[i].status) = HAP_STATUS_RES_ABSENT;
+            }
+        }
+        return HAP_FAIL;
+    }
+
+    if (should_apply) {
+        requested_special_mode = next_requested;
+        last_command_us = esp_timer_get_time();
+        noteAcceptedCommand(command);
+        syncModeCharsFromCommand(command);
+    } else {
+        updateCharBool(dry_mode_on_char, actual_mode == SpecialMode::kDry);
+        updateCharBool(fan_mode_on_char, actual_mode == SpecialMode::kFan);
+    }
+    setLastEvent("special-mode-write");
+    return HAP_SUCCESS;
+}
+
 esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     const cn105_core::MockState state = cn105_core::getMockState();
     const bool separate_airflow_tile = device_settings::homeKitSeparateAirflowTile();
-    heater_cooler = hap_serv_heater_cooler_create(activeFromMock(state),
-                                                  fahrenheitToCelsius(state.roomTemperatureF),
+    heater_cooler = hap_serv_heater_cooler_create(heaterCoolerActiveFromMock(state),
+                                                  cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC),
                                                   currentStateFromMock(state),
                                                   targetStateFromMock(state));
     if (heater_cooler == nullptr) {
@@ -697,8 +902,12 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     }
 
     int ret = hap_serv_add_char(heater_cooler, hap_char_name_create(hapString(device_settings::deviceName())));
-    ret |= hap_serv_add_char(heater_cooler, hap_char_cooling_threshold_temperature_create(fahrenheitToCelsius(state.targetTemperatureF)));
-    ret |= hap_serv_add_char(heater_cooler, hap_char_heating_threshold_temperature_create(fahrenheitToCelsius(state.targetTemperatureF)));
+    ret |= hap_serv_add_char(heater_cooler,
+                             hap_char_cooling_threshold_temperature_create(
+                                 cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC)));
+    ret |= hap_serv_add_char(heater_cooler,
+                             hap_char_heating_threshold_temperature_create(
+                                 cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC)));
     if (!separate_airflow_tile) {
         ret |= hap_serv_add_char(heater_cooler, hap_char_rotation_speed_create(fanToPercent(state.fan)));
         ret |= hap_serv_add_char(heater_cooler, hap_char_swing_mode_create(swingFromMock(state)));
@@ -738,7 +947,7 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
 
 esp_err_t addAirflowFanService(hap_acc_t* target_accessory) {
     const cn105_core::MockState state = cn105_core::getMockState();
-    airflow_fan = hap_serv_fan_v2_create(activeFromMock(state));
+    airflow_fan = hap_serv_fan_v2_create(physicalActiveFromMock(state));
     if (airflow_fan == nullptr) {
         setLastError("failed to create airflow fan service");
         return ESP_FAIL;
@@ -847,6 +1056,40 @@ esp_err_t addSwingSwitchService(hap_acc_t* target_accessory, bool up_down) {
     return ESP_OK;
 }
 
+esp_err_t addSpecialModeSwitchService(hap_acc_t* target_accessory, SpecialMode mode) {
+    const cn105_core::MockState state = cn105_core::getMockState();
+    const bool dry = mode == SpecialMode::kDry;
+    hap_serv_t*& service = dry ? dry_mode_service : fan_mode_service;
+    hap_char_t*& on_char = dry ? dry_mode_on_char : fan_mode_on_char;
+    char* service_name = dry ? dry_mode_service_name : fan_mode_service_name;
+    const bool active = activeSpecialModeFromMock(state) == mode;
+
+    service = hap_serv_switch_create(active);
+    if (service == nullptr) {
+        setLastError("failed to create special mode switch service");
+        return ESP_FAIL;
+    }
+
+    std::snprintf(service_name,
+                  96,
+                  "%s %s",
+                  device_settings::deviceName(),
+                  dry ? "Dry Mode" : "Fan-Only Mode");
+    if (addServiceNames(service, service_name) != ESP_OK) {
+        setLastError("failed to add special mode switch name");
+        return ESP_FAIL;
+    }
+
+    hap_serv_set_write_cb(service, specialModeSwitchWrite);
+    hap_acc_add_serv(target_accessory, service);
+    on_char = hap_serv_get_char_by_uuid(service, HAP_CHAR_UUID_ON);
+    if (on_char == nullptr) {
+        setLastError("special mode switch characteristic lookup failed");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
 }  // namespace
 
 namespace homekit_bridge {
@@ -863,6 +1106,9 @@ esp_err_t start() {
 
     setLastEvent("starting");
     setLastError("");
+
+    copyMode(last_standard_mode, sizeof(last_standard_mode), fallbackStandardMode());
+    observeConfirmedModeState(cn105_core::getMockState());
 
     if (hap_init(HAP_TRANSPORT_WIFI) != HAP_SUCCESS) {
         setLastError("hap_init failed");
@@ -920,6 +1166,18 @@ esp_err_t start() {
         }
         if (mapsLeftRightSwing()) {
             const esp_err_t mapping_err = addSwingSwitchService(accessory, false);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
+        }
+        if (mapsDryModeSwitch()) {
+            const esp_err_t mapping_err = addSpecialModeSwitchService(accessory, SpecialMode::kDry);
+            if (mapping_err != ESP_OK) {
+                return mapping_err;
+            }
+        }
+        if (mapsFanModeSwitch()) {
+            const esp_err_t mapping_err = addSpecialModeSwitchService(accessory, SpecialMode::kFan);
             if (mapping_err != ESP_OK) {
                 return mapping_err;
             }
@@ -994,9 +1252,10 @@ void syncFromMock() {
     }
 
     const cn105_core::MockState state = cn105_core::getMockState();
-    const float target_celsius = fahrenheitToCelsius(state.targetTemperatureF);
-    updateCharUInt8(active_char, activeFromMock(state));
-    updateCharFloat(current_temp_char, fahrenheitToCelsius(state.roomTemperatureF));
+    observeConfirmedModeState(state);
+    const float target_celsius = cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC);
+    updateCharUInt8(active_char, heaterCoolerActiveFromMock(state));
+    updateCharFloat(current_temp_char, cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC));
     updateCharUInt8(current_state_char, currentStateFromMock(state));
     updateCharUInt8(target_state_char, targetStateFromMock(state));
     updateCharFloat(cooling_threshold_char, target_celsius);
@@ -1004,7 +1263,7 @@ void syncFromMock() {
     updateCharFloat(rotation_speed_char, fanToPercent(state.fan));
     updateCharUInt8(swing_mode_char, swingFromMock(state));
     updateCharUInt8(temp_units_char, kDisplayFahrenheit);
-    updateCharUInt8(fan_active_char, activeFromMock(state));
+    updateCharUInt8(fan_active_char, physicalActiveFromMock(state));
     updateCharFloat(fan_rotation_speed_char, fanToPercent(state.fan));
     updateCharUInt8(fan_swing_mode_char, swingFromMock(state));
     const bool up_down_swing = upDownSwingFromMock(state);
@@ -1018,6 +1277,9 @@ void syncFromMock() {
     updateCharUInt8(left_right_current_position_char, positionFromTilt(left_right_tilt));
     updateCharUInt8(left_right_target_position_char, positionFromTilt(left_right_tilt));
     updateCharBool(left_right_swing_on_char, left_right_swing);
+    const SpecialMode special_mode = activeSpecialModeFromMock(state);
+    updateCharBool(dry_mode_on_char, special_mode == SpecialMode::kDry);
+    updateCharBool(fan_mode_on_char, special_mode == SpecialMode::kFan);
 }
 
 }  // namespace homekit_bridge

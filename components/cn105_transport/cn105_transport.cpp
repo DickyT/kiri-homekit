@@ -86,8 +86,8 @@ struct QueuedSetCommand {
     char power[16] = "";
     bool hasMode = false;
     char mode[16] = "";
-    bool hasTemperatureF = false;
-    int temperatureF = 77;
+    bool hasTargetTemperature = false;
+    cn105_core::HalfDegreesC targetTemperatureHalfC = 50;
     bool hasFan = false;
     char fan[16] = "";
     bool hasVane = false;
@@ -139,8 +139,8 @@ QueuedSetCommand queuedFromCommand(const cn105_core::SetCommand& command, bool o
     copyString(queued.power, sizeof(queued.power), command.power);
     queued.hasMode = command.hasMode;
     copyString(queued.mode, sizeof(queued.mode), command.mode);
-    queued.hasTemperatureF = command.hasTemperatureF;
-    queued.temperatureF = command.temperatureF;
+    queued.hasTargetTemperature = command.hasTargetTemperature;
+    queued.targetTemperatureHalfC = command.targetTemperatureHalfC;
     queued.hasFan = command.hasFan;
     copyString(queued.fan, sizeof(queued.fan), command.fan);
     queued.hasVane = command.hasVane;
@@ -156,8 +156,8 @@ cn105_core::SetCommand commandView(const QueuedSetCommand& queued) {
     command.power = queued.hasPower ? queued.power : nullptr;
     command.hasMode = queued.hasMode;
     command.mode = queued.hasMode ? queued.mode : nullptr;
-    command.hasTemperatureF = queued.hasTemperatureF;
-    command.temperatureF = queued.temperatureF;
+    command.hasTargetTemperature = queued.hasTargetTemperature;
+    command.targetTemperatureHalfC = queued.targetTemperatureHalfC;
     command.hasFan = queued.hasFan;
     command.fan = queued.hasFan ? queued.fan : nullptr;
     command.hasVane = queued.hasVane;
@@ -209,8 +209,12 @@ bool commandMatchesState(const cn105_core::SetCommand& command, char* mismatch, 
     if (command.hasMode && command.mode != nullptr && std::strcmp(state.mode, command.mode) != 0) {
         return reportMismatch(mismatch, mismatch_len, "mode", command.mode, state.mode);
     }
-    if (command.hasTemperatureF && state.targetTemperatureF != command.temperatureF) {
-        return reportMismatch(mismatch, mismatch_len, "temperature_f", command.temperatureF, state.targetTemperatureF);
+    if (command.hasTargetTemperature && state.targetTemperatureHalfC != command.targetTemperatureHalfC) {
+        return reportMismatch(mismatch,
+                              mismatch_len,
+                              "temperature_half_c",
+                              command.targetTemperatureHalfC,
+                              state.targetTemperatureHalfC);
     }
     if (command.hasFan && command.fan != nullptr && std::strcmp(state.fan, command.fan) != 0) {
         return reportMismatch(mismatch, mismatch_len, "fan", command.fan, state.fan);
@@ -530,7 +534,8 @@ esp_err_t start() {
         return ESP_OK;
     }
 
-    set_queue = xQueueCreate(2, sizeof(QueuedSetCommand));
+    // Leave room for short HomeKit command bursts, such as Dry -> Fan -> Off.
+    set_queue = xQueueCreate(4, sizeof(QueuedSetCommand));
     if (set_queue == nullptr) {
         ESP_LOGE(TAG, "Failed to create SET command queue");
         return ESP_FAIL;

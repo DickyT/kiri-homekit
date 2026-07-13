@@ -16,7 +16,9 @@ export type Cn105MockState = {
   power: "ON" | "OFF";
   mode: "COOL" | "HEAT" | "DRY" | "FAN" | "AUTO";
   target_temperature_f: number;
+  target_temperature_c: number;
   room_temperature_f: number;
+  room_temperature_c: number;
   fan: string;
   vane: string;
   wide_vane: string;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -217,7 +218,7 @@ void openSafeLibs(lua_State* L) {
 }
 
 void pushState(lua_State* L, const cn105_core::MockState& state) {
-    lua_createtable(L, 0, 14);
+    lua_createtable(L, 0, 16);
 
     lua_pushboolean(L, state.power != nullptr && std::strcmp(state.power, "ON") == 0);
     lua_setfield(L, -2, "power");
@@ -225,11 +226,13 @@ void pushState(lua_State* L, const cn105_core::MockState& state) {
     lua_setfield(L, -2, "power_raw");
     lua_pushstring(L, state.mode);
     lua_setfield(L, -2, "mode");
-    lua_pushinteger(L, state.targetTemperatureF);
+    lua_pushinteger(L, cn105_core::halfDegreesToFahrenheitSetpoint(state.targetTemperatureHalfC));
     lua_setfield(L, -2, "target_temp_f");
-    lua_pushinteger(L, state.roomTemperatureF);
+    lua_pushnumber(L, cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC));
+    lua_setfield(L, -2, "target_temp_c");
+    lua_pushnumber(L, cn105_core::halfDegreesToFahrenheit(state.roomTemperatureHalfC));
     lua_setfield(L, -2, "room_temp_f");
-    lua_pushnumber(L, (static_cast<double>(state.roomTemperatureF) - 32.0) / 1.8);
+    lua_pushnumber(L, cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC));
     lua_setfield(L, -2, "room_temp_c");
     lua_pushstring(L, state.fan);
     lua_setfield(L, -2, "fan");
@@ -299,6 +302,18 @@ int lAcSetTargetTemp(lua_State* L) {
         return luaL_error(L, "ac.set_target_temp_f: expected 50..88 F");
     }
     appendAction(L, lua_vm::ActionType::kSetTargetTemperatureF, nullptr, temp_f);
+    return 0;
+}
+
+int lAcSetTargetTempC(lua_State* L) {
+    const float temp_c = static_cast<float>(luaL_checknumber(L, 1));
+    const float doubled = temp_c * 2.0f;
+    if (!std::isfinite(temp_c) || temp_c < 10.0f || temp_c > 31.0f ||
+        std::fabs(doubled - std::round(doubled)) > 0.001f) {
+        return luaL_error(L, "ac.set_target_temp_c: expected 10.0..31.0 C in 0.5 C steps");
+    }
+    const cn105_core::HalfDegreesC half_c = cn105_core::celsiusToHalfDegrees(temp_c);
+    appendAction(L, lua_vm::ActionType::kSetTargetTemperatureC, nullptr, half_c);
     return 0;
 }
 
@@ -618,6 +633,7 @@ void registerApi(lua_State* L, ScriptContext* ctx, const cn105_core::MockState& 
     setFunction(L, "set_mode", lAcSetMode, ctx);
     setFunction(L, "set_target_temp", lAcSetTargetTemp, ctx);
     setFunction(L, "set_target_temp_f", lAcSetTargetTemp, ctx);
+    setFunction(L, "set_target_temp_c", lAcSetTargetTempC, ctx);
     setFunction(L, "set_fan", lAcSetFan, ctx);
     setFunction(L, "set_vane", lAcSetVane, ctx);
     setFunction(L, "set_up_down_airflow", lAcSetVane, ctx);
@@ -818,6 +834,7 @@ const char* actionName(lua_vm::ActionType type) {
         case lua_vm::ActionType::kSetPower: return "set_power";
         case lua_vm::ActionType::kSetMode: return "set_mode";
         case lua_vm::ActionType::kSetTargetTemperatureF: return "set_target_temp_f";
+        case lua_vm::ActionType::kSetTargetTemperatureC: return "set_target_temp_c";
         case lua_vm::ActionType::kSetFan: return "set_fan";
         case lua_vm::ActionType::kSetVane: return "set_vane";
         case lua_vm::ActionType::kSetWideVane: return "set_wide_vane";
@@ -969,7 +986,7 @@ void recordActionResult(bool confirmed, uint8_t attempts, const char* message) {
 
 ProbeResult runProbe() {
     ProbeResult probe{};
-    probe.checksTotal = 5;
+    probe.checksTotal = 8;
 
     const auto expectValidation = [&probe](const char* script, bool expected_ok, bool expected_limit) {
         const ValidationResult result = validateScriptBuffer(script, std::strlen(script));
@@ -1021,6 +1038,9 @@ ProbeResult runProbe() {
 
     expectHook("function on_state_changed(now, previous) ac.set_fan(3) end", true, 1);
     expectHook("function on_state_changed(now, previous) ac.set_target_temp_f(99) end", false, 0);
+    expectHook("function on_state_changed(now, previous) ac.set_target_temp_c(21.5) end", true, 1);
+    expectHook("function on_state_changed(now, previous) ac.set_target_temp_c(21.6) end", false, 0);
+    expectHook("function on_state_changed(now, previous) ac.set_target_temp_c(40) end", false, 0);
 
     probe.ok = probe.checksPassed == probe.checksTotal;
     if (probe.ok) {

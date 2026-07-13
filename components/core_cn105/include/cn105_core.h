@@ -19,6 +19,9 @@ namespace cn105_core {
 inline constexpr size_t kPacketLen = 22;
 inline constexpr size_t kConnectLen = 8;
 inline constexpr size_t kMaxHexLen = (kPacketLen * 3);
+using HalfDegreesC = int16_t;
+inline constexpr HalfDegreesC kMinTargetHalfC = 20;  // 10.0 C
+inline constexpr HalfDegreesC kMaxTargetHalfC = 62;  // 31.0 C
 
 struct Packet {
     uint8_t bytes[kPacketLen] = {};
@@ -32,8 +35,8 @@ struct SetCommand {
     bool hasMode = false;
     const char* mode = nullptr;
 
-    bool hasTemperatureF = false;
-    int temperatureF = 77;
+    bool hasTargetTemperature = false;
+    HalfDegreesC targetTemperatureHalfC = 50;
 
     bool hasFan = false;
     const char* fan = nullptr;
@@ -49,8 +52,8 @@ struct MockState {
     bool connected = true;
     const char* power = "OFF";
     const char* mode = "COOL";
-    int targetTemperatureF = 77;
-    int roomTemperatureF = 75;
+    HalfDegreesC targetTemperatureHalfC = 50;
+    HalfDegreesC roomTemperatureHalfC = 48;
     const char* fan = "AUTO";
     const char* vane = "AUTO";
     const char* wideVane = "|";
@@ -72,6 +75,11 @@ struct DecodedPacket {
 };
 
 uint8_t checksum(const uint8_t* bytes, size_t len);
+HalfDegreesC celsiusToHalfDegrees(float celsius);
+float halfDegreesToCelsius(HalfDegreesC half_c);
+HalfDegreesC fahrenheitSetpointToHalfDegrees(int fahrenheit);
+int halfDegreesToFahrenheitSetpoint(HalfDegreesC half_c);
+float halfDegreesToFahrenheit(HalfDegreesC half_c);
 bool bytesToHex(const uint8_t* bytes, size_t len, char* out, size_t out_len);
 bool parseHex(const char* hex, uint8_t* out, size_t max_len, size_t* out_len, char* error, size_t error_len);
 

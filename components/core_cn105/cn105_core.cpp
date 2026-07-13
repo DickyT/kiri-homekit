@@ -61,7 +61,7 @@ static const uint8_t MODE[5] = { 0x01, 0x02, 0x03, 0x07, 0x08 };
 static const char* MODE_MAP[5] = { "HEAT", "DRY", "COOL", "FAN", "AUTO" };
 
 // Legacy temperature is whole Celsius only and reversed: 0x00 = 31C, 0x0F = 16C.
-// The project exposes Fahrenheit, so SET builder uses the high precision byte when possible.
+// Encoding B preserves the indoor unit's native half-Celsius precision.
 static const uint8_t TEMP[16] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
@@ -137,22 +137,13 @@ int clampInt(int value, int min, int max) {
     return value;
 }
 
-float fahrenheitToCn105Celsius(int fahrenheit) {
+float fahrenheitToNearestHalfCelsius(int fahrenheit) {
     const float celsius = (static_cast<float>(fahrenheit) - 32.0f) / 1.8f;
     return std::round(celsius * 2.0f) / 2.0f;
 }
 
-int cn105CelsiusToFahrenheit(float celsius) {
-    return static_cast<int>(std::lround((celsius * 1.8f) + 32.0f));
-}
-
-uint8_t encodeHighPrecisionTemperatureF(int fahrenheit) {
-    const float celsius = fahrenheitToCn105Celsius(fahrenheit);
-    return static_cast<uint8_t>(std::lround(celsius * 2.0f) + 128);
-}
-
 // Mitsubishi's Fahrenheit remotes use a lookup table rather than plain math.
-// Keep target SET write/read on the same table so 69F does not round-trip as 70F.
+// Keep Fahrenheit Web/Lua setpoints on the same table as the physical remote.
 // Each entry is {fahrenheit, celsius_x10} where celsius_x10 is 0.1C units.
 struct FahrenheitEntry { int f; int c10; };
 static const FahrenheitEntry F_TO_C[] = {
@@ -170,37 +161,32 @@ float lookupCelsiusForFahrenheit(int fahrenheit) {
             return static_cast<float>(F_TO_C[i].c10) / 10.0f;
         }
     }
-    return fahrenheitToCn105Celsius(fahrenheit);
+    return fahrenheitToNearestHalfCelsius(fahrenheit);
 }
 
-int lookupFahrenheitForTargetCelsius(float celsius) {
-    int best_f = cn105CelsiusToFahrenheit(celsius);
-    float best_delta = 1000.0f;
+int lookupFahrenheitForTargetHalfC(cn105_core::HalfDegreesC half_c) {
     for (int i = 0; i < kFTableSize; ++i) {
-        const float entry_c = static_cast<float>(F_TO_C[i].c10) / 10.0f;
-        const float delta = std::fabs(entry_c - celsius);
-        if (delta < best_delta) {
-            best_delta = delta;
-            best_f = F_TO_C[i].f;
+        if (F_TO_C[i].c10 == static_cast<int>(half_c) * 5) {
+            return F_TO_C[i].f;
         }
     }
-    return best_f;
+    return static_cast<int>(std::lround((static_cast<float>(half_c) / 2.0f) * 1.8f + 32.0f));
 }
 
-uint8_t encodeLegacyTemperatureByte(float celsius) {
-    int whole = static_cast<int>(celsius + 0.25f);
+uint8_t encodeLegacyTemperatureByte(cn105_core::HalfDegreesC half_c) {
+    int whole = (static_cast<int>(half_c) + 1) / 2;
     if (whole < 16) whole = 16;
     if (whole > 31) whole = 31;
     return static_cast<uint8_t>(31 - whole);
 }
 
-int decodeTemperatureF(uint8_t legacyByte, uint8_t highPrecisionByte) {
+cn105_core::HalfDegreesC decodeTemperatureHalfC(uint8_t legacyByte, uint8_t highPrecisionByte) {
     if (highPrecisionByte != 0x00) {
-        return lookupFahrenheitForTargetCelsius((static_cast<float>(highPrecisionByte) - 128.0f) / 2.0f);
+        return static_cast<cn105_core::HalfDegreesC>(highPrecisionByte) - 128;
     }
 
     const int celsius = lookupInt(TEMP_MAP, TEMP, 16, legacyByte, 25);
-    return lookupFahrenheitForTargetCelsius(static_cast<float>(celsius));
+    return static_cast<cn105_core::HalfDegreesC>(celsius * 2);
 }
 
 int hexValue(char c) {
@@ -236,6 +222,26 @@ uint8_t checksum(const uint8_t* bytes, size_t len) {
         sum += bytes[i];
     }
     return static_cast<uint8_t>((0xFC - sum) & 0xFF);
+}
+
+HalfDegreesC celsiusToHalfDegrees(float celsius) {
+    return static_cast<HalfDegreesC>(std::lround(celsius * 2.0f));
+}
+
+float halfDegreesToCelsius(HalfDegreesC half_c) {
+    return static_cast<float>(half_c) / 2.0f;
+}
+
+HalfDegreesC fahrenheitSetpointToHalfDegrees(int fahrenheit) {
+    return celsiusToHalfDegrees(lookupCelsiusForFahrenheit(fahrenheit));
+}
+
+int halfDegreesToFahrenheitSetpoint(HalfDegreesC half_c) {
+    return lookupFahrenheitForTargetHalfC(half_c);
+}
+
+float halfDegreesToFahrenheit(HalfDegreesC half_c) {
+    return halfDegreesToCelsius(half_c) * 1.8f + 32.0f;
 }
 
 bool bytesToHex(const uint8_t* bytes, size_t len, char* out, size_t out_len) {
@@ -355,11 +361,11 @@ bool buildSetPacket(const SetCommand& command, Packet* packet, char* error, size
         packet->bytes[6] |= CONTROL_PACKET_1[1];
     }
 
-    if (command.hasTemperatureF) {
-        const int clampedF = clampInt(command.temperatureF, 50, 88);
-        const float celsius = lookupCelsiusForFahrenheit(clampedF);
-        packet->bytes[19] = static_cast<uint8_t>(std::lround(celsius * 2.0f) + 128);
-        packet->bytes[10] = encodeLegacyTemperatureByte(celsius);
+    if (command.hasTargetTemperature) {
+        const HalfDegreesC half_c = static_cast<HalfDegreesC>(
+            clampInt(command.targetTemperatureHalfC, kMinTargetHalfC, kMaxTargetHalfC));
+        packet->bytes[19] = static_cast<uint8_t>(half_c + 128);
+        packet->bytes[10] = encodeLegacyTemperatureByte(half_c);
         packet->bytes[6] |= CONTROL_PACKET_1[2];
     }
 
@@ -435,15 +441,15 @@ bool decodePacket(const uint8_t* bytes, size_t len, DecodedPacket* decoded, char
     switch (decoded->command) {
         case 0x41: {
             std::snprintf(decoded->type, sizeof(decoded->type), "set");
-            const int tempF = decodeTemperatureF(bytes[10], bytes[19]);
+            const HalfDegreesC temp_half_c = decodeTemperatureHalfC(bytes[10], bytes[19]);
             std::snprintf(decoded->summary,
                           sizeof(decoded->summary),
-                          "SET flags=%02X/%02X power=%s mode=%s temp=%dF fan=%s vane=%s wide=%s",
+                          "SET flags=%02X/%02X power=%s mode=%s temp=%.1fC fan=%s vane=%s wide=%s",
                           bytes[6],
                           bytes[7],
                           lookupString(POWER_MAP, POWER, 2, bytes[8]),
                           lookupString(MODE_MAP, MODE, 5, bytes[9]),
-                          tempF,
+                          static_cast<double>(halfDegreesToCelsius(temp_half_c)),
                           lookupString(FAN_MAP, FAN, 6, bytes[11]),
                           lookupString(VANE_MAP, VANE, 7, bytes[12]),
                           lookupString(WIDEVANE_MAP, WIDEVANE, 8, bytes[18] & 0x0F));
@@ -465,17 +471,21 @@ bool decodePacket(const uint8_t* bytes, size_t len, DecodedPacket* decoded, char
             if (data[0] == 0x02 && data_len >= 12) {
                 std::snprintf(decoded->summary,
                               sizeof(decoded->summary),
-                              "SETTINGS power=%s mode=%s temp=%dF fan=%s vane=%s wide=%s",
+                              "SETTINGS power=%s mode=%s temp=%.1fC fan=%s vane=%s wide=%s",
                               lookupString(POWER_MAP, POWER, 2, data[3]),
                               lookupString(MODE_MAP, MODE, 5, data[4] > 0x08 ? data[4] - 0x08 : data[4]),
-                              decodeTemperatureF(data[5], data[11]),
+                              static_cast<double>(halfDegreesToCelsius(decodeTemperatureHalfC(data[5], data[11]))),
                               lookupString(FAN_MAP, FAN, 6, data[6]),
                               lookupString(VANE_MAP, VANE, 7, data[7]),
                               lookupString(WIDEVANE_MAP, WIDEVANE, 8, data[10] & 0x0F));
             } else if (data[0] == 0x03 && data_len >= 7) {
-                const int roomF = data[6] != 0 ? cn105CelsiusToFahrenheit((static_cast<float>(data[6]) - 128.0f) / 2.0f)
-                                                : cn105CelsiusToFahrenheit(static_cast<float>(roomTempFromByte(data[3])));
-                std::snprintf(decoded->summary, sizeof(decoded->summary), "ROOM temperature=%dF", roomF);
+                const HalfDegreesC room_half_c = data[6] != 0
+                                                     ? static_cast<HalfDegreesC>(data[6]) - 128
+                                                     : static_cast<HalfDegreesC>(roomTempFromByte(data[3]) * 2);
+                std::snprintf(decoded->summary,
+                              sizeof(decoded->summary),
+                              "ROOM temperature=%.1fC",
+                              static_cast<double>(halfDegreesToCelsius(room_half_c)));
             } else if (data[0] == 0x06 && data_len >= 7) {
                 std::snprintf(decoded->summary,
                               sizeof(decoded->summary),
@@ -510,11 +520,11 @@ void initMockState() {
         mock_state.lastError = last_error;
     }
     ESP_LOGI(TAG,
-             "CN105 mock initialized: power=%s mode=%s target=%dF room=%dF transport=mock",
+             "CN105 mock initialized: power=%s mode=%s target=%.1fC room=%.1fC transport=mock",
              mock_state.power,
              mock_state.mode,
-             mock_state.targetTemperatureF,
-             mock_state.roomTemperatureF);
+             static_cast<double>(halfDegreesToCelsius(mock_state.targetTemperatureHalfC)),
+             static_cast<double>(halfDegreesToCelsius(mock_state.roomTemperatureHalfC)));
 }
 
 MockState getMockState() {
@@ -547,7 +557,7 @@ bool applySetPacketToMock(const uint8_t* bytes, size_t len, char* error, size_t 
         mock_state.mode = lookupString(MODE_MAP, MODE, 5, bytes[9]);
     }
     if ((bytes[6] & CONTROL_PACKET_1[2]) != 0) {
-        mock_state.targetTemperatureF = decodeTemperatureF(bytes[10], bytes[19]);
+        mock_state.targetTemperatureHalfC = decodeTemperatureHalfC(bytes[10], bytes[19]);
     }
     if ((bytes[6] & CONTROL_PACKET_1[3]) != 0) {
         mock_state.fan = lookupString(FAN_MAP, FAN, 6, bytes[11]);
@@ -594,7 +604,7 @@ bool applyInfoResponseToState(const uint8_t* bytes, size_t len) {
         mock_state.power = lookupString(POWER_MAP, POWER, 2, data[3]);
         uint8_t mode_byte = data[4] > 0x08 ? data[4] - 0x08 : data[4];
         mock_state.mode = lookupString(MODE_MAP, MODE, 5, mode_byte);
-        mock_state.targetTemperatureF = decodeTemperatureF(data[5], data[11]);
+        mock_state.targetTemperatureHalfC = decodeTemperatureHalfC(data[5], data[11]);
         mock_state.fan = lookupString(FAN_MAP, FAN, 6, data[6]);
         mock_state.vane = lookupString(VANE_MAP, VANE, 7, data[7]);
         if (data_len >= 11) {
@@ -603,9 +613,9 @@ bool applyInfoResponseToState(const uint8_t* bytes, size_t len) {
         mock_dirty = true;
     } else if (data[0] == 0x03 && data_len >= 7) {
         if (data[6] != 0) {
-            mock_state.roomTemperatureF = cn105CelsiusToFahrenheit((static_cast<float>(data[6]) - 128.0f) / 2.0f);
+            mock_state.roomTemperatureHalfC = static_cast<HalfDegreesC>(data[6]) - 128;
         } else {
-            mock_state.roomTemperatureF = cn105CelsiusToFahrenheit(static_cast<float>(roomTempFromByte(data[3])));
+            mock_state.roomTemperatureHalfC = static_cast<HalfDegreesC>(roomTempFromByte(data[3]) * 2);
         }
         mock_dirty = true;
     } else if (data[0] == 0x06 && data_len >= 7) {
@@ -625,13 +635,28 @@ void setConnected(bool connected) {
 }
 
 bool runSelfTest(char* error, size_t error_len) {
-    const int target_roundtrip_tests[] = {69, 70, 77};
-    for (const int temp_f : target_roundtrip_tests) {
-        const float encoded_c = lookupCelsiusForFahrenheit(temp_f);
-        const uint8_t encoded = static_cast<uint8_t>(std::lround(encoded_c * 2.0f) + 128);
-        const int decoded_f = decodeTemperatureF(0, encoded);
+    for (int temp_f = 50; temp_f <= 88; ++temp_f) {
+        const HalfDegreesC half_c = fahrenheitSetpointToHalfDegrees(temp_f);
+        const int decoded_f = halfDegreesToFahrenheitSetpoint(half_c);
         if (decoded_f != temp_f) {
             std::snprintf(error, error_len, "%dF target roundtrip failed: decoded %dF", temp_f, decoded_f);
+            return false;
+        }
+    }
+
+    for (HalfDegreesC half_c = kMinTargetHalfC; half_c <= kMaxTargetHalfC; ++half_c) {
+        const uint8_t encoded = static_cast<uint8_t>(half_c + 128);
+        if (decodeTemperatureHalfC(0, encoded) != half_c) {
+            std::snprintf(error, error_len, "half-degree target roundtrip failed at %.1fC",
+                          static_cast<double>(halfDegreesToCelsius(half_c)));
+            return false;
+        }
+    }
+
+    for (int celsius = 16; celsius <= 31; ++celsius) {
+        const uint8_t legacy = static_cast<uint8_t>(31 - celsius);
+        if (decodeTemperatureHalfC(legacy, 0) != celsius * 2) {
+            std::snprintf(error, error_len, "legacy target decode failed at %dC", celsius);
             return false;
         }
     }
@@ -641,8 +666,8 @@ bool runSelfTest(char* error, size_t error_len) {
     command.power = "ON";
     command.hasMode = true;
     command.mode = "COOL";
-    command.hasTemperatureF = true;
-    command.temperatureF = 77;
+    command.hasTargetTemperature = true;
+    command.targetTemperatureHalfC = 53;  // 26.5 C, Encoding B = 0xB5.
     command.hasFan = true;
     command.fan = "AUTO";
     command.hasVane = true;
@@ -672,20 +697,20 @@ bool runSelfTest(char* error, size_t error_len) {
         return false;
     }
 
-    int roundTripF = 0;
+    HalfDegreesC round_trip_half_c = 0;
     {
         platform_lock::ScopedLock lock(state_lock);
-        roundTripF = mock_state.targetTemperatureF;
+        round_trip_half_c = mock_state.targetTemperatureHalfC;
         mock_state = before;
         std::snprintf(last_packet_hex, sizeof(last_packet_hex), "%s", previous_packet_hex);
         std::snprintf(last_error, sizeof(last_error), "%s", previous_error);
     }
-    if (roundTripF != 77) {
-        setError(error, error_len, "77F SET roundtrip failed");
+    if (packet.bytes[19] != 0xB5 || round_trip_half_c != 53) {
+        setError(error, error_len, "26.5C SET roundtrip failed");
         return false;
     }
 
-    ESP_LOGI(TAG, "CN105 offline self-test passed: Fahrenheit target and 77F SET roundtrips");
+    ESP_LOGI(TAG, "CN105 offline self-test passed: half-degree and Fahrenheit target roundtrips");
     return true;
 }
 

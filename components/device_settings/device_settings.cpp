@@ -34,7 +34,8 @@ constexpr char kDefaultHomeKitModel[] = "Kiri Bridge";
 constexpr char kDefaultHomeKitSerial[] = "KIRI-BRIDGE";
 constexpr char kDefaultHomeKitSetupId[] = "DKT1";
 constexpr bool kDefaultHomeKitSeparateAirflowTile = true;
-constexpr uint8_t kDefaultHomeKitAdvancedMapping = 0;
+constexpr uint8_t kDefaultHomeKitAdvancedMapping = device_settings::kHomeKitMapDefault;
+constexpr uint8_t kHomeKitAdvancedMappingSchemaVersion = 2;
 constexpr uint32_t kDefaultAcCapabilities = device_settings::kAcCapabilityDefault;
 constexpr bool kDefaultUseRealCn105 = true;
 constexpr int kDefaultStatusLedPin = board_profile::kDefaultStatusLedPin;
@@ -434,15 +435,29 @@ esp_err_t init() {
     loadBoolSetting(handle, "hk_airtile", &settings.homeKitSeparateAirflowTile, &wrote_defaults);
 
     uint8_t stored_mapping = settings.homeKitAdvancedMapping;
+    uint8_t stored_mapping_version = 0;
+    nvs_get_u8(handle, "hk_map_v", &stored_mapping_version);
     err = nvs_get_u8(handle, "hk_map", &stored_mapping);
     if (err == ESP_OK) {
-        if (validHomeKitAdvancedMapping(stored_mapping)) {
+        if (stored_mapping_version < kHomeKitAdvancedMappingSchemaVersion) {
+            stored_mapping |= device_settings::kHomeKitMapDefault;
+            if (!validHomeKitAdvancedMapping(stored_mapping)) {
+                ESP_LOGW(TAG, "Invalid legacy HomeKit advanced mapping in NVS: 0x%02x; using default", stored_mapping);
+                stored_mapping = kDefaultHomeKitAdvancedMapping;
+            }
+            settings.homeKitAdvancedMapping = stored_mapping;
+            nvs_set_u8(handle, "hk_map", settings.homeKitAdvancedMapping);
+            nvs_set_u8(handle, "hk_map_v", kHomeKitAdvancedMappingSchemaVersion);
+            wrote_defaults = true;
+            ESP_LOGI(TAG, "Enabled default Dry/Fan HomeKit mappings during hk_map migration");
+        } else if (validHomeKitAdvancedMapping(stored_mapping)) {
             settings.homeKitAdvancedMapping = stored_mapping;
         } else {
             ESP_LOGW(TAG, "Invalid HomeKit advanced mapping in NVS: 0x%02x; using default", stored_mapping);
         }
     } else if (err == ESP_ERR_NVS_NOT_FOUND) {
         nvs_set_u8(handle, "hk_map", settings.homeKitAdvancedMapping);
+        nvs_set_u8(handle, "hk_map_v", kHomeKitAdvancedMappingSchemaVersion);
         wrote_defaults = true;
     } else {
         ESP_LOGW(TAG, "Failed reading HomeKit advanced mapping: %s; using default", esp_err_to_name(err));
@@ -659,6 +674,14 @@ bool homeKitMapsUpDownSwing() {
 
 bool homeKitMapsLeftRightSwing() {
     return (settings.homeKitAdvancedMapping & kHomeKitMapLeftRightSwing) != 0;
+}
+
+bool homeKitMapsDryModeSwitch() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapDryModeSwitch) != 0;
+}
+
+bool homeKitMapsFanModeSwitch() {
+    return (settings.homeKitAdvancedMapping & kHomeKitMapFanModeSwitch) != 0;
 }
 
 uint32_t acCapabilities() {
@@ -902,6 +925,7 @@ bool save(const Settings& requested, bool* reboot_required, char* message, size_
     nvs_set_str(handle, "hk_setupid", next.homeKitSetupId);
     nvs_set_u8(handle, "hk_airtile", next.homeKitSeparateAirflowTile ? 1 : 0);
     nvs_set_u8(handle, "hk_map", next.homeKitAdvancedMapping);
+    nvs_set_u8(handle, "hk_map_v", kHomeKitAdvancedMappingSchemaVersion);
     nvs_set_u32(handle, "ac_caps", next.acCapabilities);
     nvs_set_u8(handle, "ac_caps_v", kAcCapabilitiesSchemaVersion);
     nvs_erase_key(handle, "hk_hvac");

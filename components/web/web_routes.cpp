@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -151,7 +152,9 @@ void writeMockStateJson(const cn105_core::MockState& state, char* out, size_t ou
                   "\"power\":\"%s\","
                   "\"mode\":\"%s\","
                   "\"target_temperature_f\":%d,"
-                  "\"room_temperature_f\":%d,"
+                  "\"target_temperature_c\":%.1f,"
+                  "\"room_temperature_f\":%.1f,"
+                  "\"room_temperature_c\":%.1f,"
                   "\"fan\":\"%s\","
                   "\"vane\":\"%s\","
                   "\"wide_vane\":\"%s\","
@@ -165,8 +168,10 @@ void writeMockStateJson(const cn105_core::MockState& state, char* out, size_t ou
                   state.connected ? "true" : "false",
                   state.power,
                   state.mode,
-                  state.targetTemperatureF,
-                  state.roomTemperatureF,
+                  cn105_core::halfDegreesToFahrenheitSetpoint(state.targetTemperatureHalfC),
+                  static_cast<double>(cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC)),
+                  static_cast<double>(cn105_core::halfDegreesToFahrenheit(state.roomTemperatureHalfC)),
+                  static_cast<double>(cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC)),
                   state.fan,
                   state.vane,
                   state.wideVane,
@@ -349,6 +354,7 @@ const char* luaActionTypeName(lua_vm::ActionType type) {
         case lua_vm::ActionType::kSetPower: return "set_power";
         case lua_vm::ActionType::kSetMode: return "set_mode";
         case lua_vm::ActionType::kSetTargetTemperatureF: return "set_target_temp_f";
+        case lua_vm::ActionType::kSetTargetTemperatureC: return "set_target_temp_c";
         case lua_vm::ActionType::kSetFan: return "set_fan";
         case lua_vm::ActionType::kSetVane: return "set_vane";
         case lua_vm::ActionType::kSetWideVane: return "set_wide_vane";
@@ -931,9 +937,33 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
     }
 
     char temp[16] = {};
-    if (web_http::queryValue(query, "temperature_f", temp, sizeof(temp)) || web_http::queryValue(query, "temp_f", temp, sizeof(temp))) {
-        command.hasTemperatureF = true;
-        command.temperatureF = std::atoi(temp);
+    if (web_http::queryValue(query, "temperature_c", temp, sizeof(temp)) ||
+        web_http::queryValue(query, "temp_c", temp, sizeof(temp))) {
+        char* end = nullptr;
+        const float temp_c = std::strtof(temp, &end);
+        if (end == temp || (end != nullptr && *end != '\0') || !std::isfinite(temp_c)) {
+            return web_http::sendJsonError(req, "temperature_c must be a number");
+        }
+        if (temp_c < 10.0f || temp_c > 31.0f) {
+            return web_http::sendJsonError(req, "temperature_c must be between 10.0 and 31.0");
+        }
+        const float doubled = temp_c * 2.0f;
+        if (std::fabs(doubled - std::round(doubled)) > 0.001f) {
+            return web_http::sendJsonError(req, "temperature_c must use 0.5 degree steps");
+        }
+        const cn105_core::HalfDegreesC half_c = cn105_core::celsiusToHalfDegrees(temp_c);
+        command.hasTargetTemperature = true;
+        command.targetTemperatureHalfC = half_c;
+        any = true;
+    } else if (web_http::queryValue(query, "temperature_f", temp, sizeof(temp)) ||
+               web_http::queryValue(query, "temp_f", temp, sizeof(temp))) {
+        char* end = nullptr;
+        const long temp_f = std::strtol(temp, &end, 10);
+        if (end == temp || (end != nullptr && *end != '\0') || temp_f < 50 || temp_f > 88) {
+            return web_http::sendJsonError(req, "temperature_f must be an integer between 50 and 88");
+        }
+        command.hasTargetTemperature = true;
+        command.targetTemperatureHalfC = cn105_core::fahrenheitSetpointToHalfDegrees(static_cast<int>(temp_f));
         any = true;
     }
 
@@ -972,8 +1002,8 @@ esp_err_t cn105BuildSetHandler(httpd_req_t* req) {
         command.power = mock.power;
         command.hasMode = true;
         command.mode = mock.mode;
-        command.hasTemperatureF = true;
-        command.temperatureF = mock.targetTemperatureF;
+        command.hasTargetTemperature = true;
+        command.targetTemperatureHalfC = mock.targetTemperatureHalfC;
         command.hasFan = true;
         command.fan = mock.fan;
         if (device_settings::supportsUpDownAirflow()) {

@@ -74,11 +74,13 @@ const HVAC_TARGET_OPTIONS = [
   { value: "AUTO", bit: 1 << 0, label: "Auto mode", detail: "The Mitsubishi remote has AUTO mode." },
   { value: "HEAT", bit: 1 << 1, label: "Heating", detail: "The Mitsubishi remote has HEAT mode." },
   { value: "COOL", bit: 1 << 2, label: "Cooling", detail: "The Mitsubishi remote has COOL mode." },
-  { value: "DRY", bit: 1 << 3, label: "Dry", detail: "The Mitsubishi remote has DRY/dehumidify mode. Kiri Web UI only; Apple Home cannot show this mode." },
-  { value: "FAN", bit: 1 << 4, label: "Fan only", detail: "The Mitsubishi remote has FAN mode. Kiri Web UI only; Apple Home cannot show this mode." },
+  { value: "DRY", bit: 1 << 3, label: "Dry", detail: "The Mitsubishi remote has DRY/dehumidify mode. Advanced HomeKit Mapping can expose it as a separate switch." },
+  { value: "FAN", bit: 1 << 4, label: "Fan only", detail: "The Mitsubishi remote has FAN mode. Advanced HomeKit Mapping can expose it as a separate switch." },
 ] as const;
 const AC_CAP_HOMEKIT_TARGET_MASK = (1 << 0) | (1 << 1) | (1 << 2);
-const AC_CAP_TARGET_MASK = AC_CAP_HOMEKIT_TARGET_MASK | (1 << 3) | (1 << 4);
+const AC_CAP_DRY = 1 << 3;
+const AC_CAP_FAN = 1 << 4;
+const AC_CAP_TARGET_MASK = AC_CAP_HOMEKIT_TARGET_MASK | AC_CAP_DRY | AC_CAP_FAN;
 const AC_CAP_UP_DOWN_AIRFLOW = 1 << 5;
 const AC_CAP_LEFT_RIGHT_AIRFLOW = 1 << 6;
 const AC_CAP_KNOWN_MASK = AC_CAP_TARGET_MASK | AC_CAP_UP_DOWN_AIRFLOW | AC_CAP_LEFT_RIGHT_AIRFLOW;
@@ -87,13 +89,19 @@ const HK_MAP_UP_DOWN_TILT = 1 << 0;
 const HK_MAP_LEFT_RIGHT_TILT = 1 << 1;
 const HK_MAP_UP_DOWN_SWING = 1 << 2;
 const HK_MAP_LEFT_RIGHT_SWING = 1 << 3;
-const HK_MAP_KNOWN_MASK = HK_MAP_UP_DOWN_TILT | HK_MAP_LEFT_RIGHT_TILT | HK_MAP_UP_DOWN_SWING | HK_MAP_LEFT_RIGHT_SWING;
+const HK_MAP_DRY_MODE = 1 << 4;
+const HK_MAP_FAN_MODE = 1 << 5;
+const HK_MAP_DEFAULT = HK_MAP_DRY_MODE | HK_MAP_FAN_MODE;
+const HK_MAP_KNOWN_MASK = HK_MAP_UP_DOWN_TILT | HK_MAP_LEFT_RIGHT_TILT | HK_MAP_UP_DOWN_SWING |
+  HK_MAP_LEFT_RIGHT_SWING | HK_MAP_DRY_MODE | HK_MAP_FAN_MODE;
 
 const HOMEKIT_MAPPING_OPTIONS = [
   { bit: HK_MAP_UP_DOWN_TILT, capability: AC_CAP_UP_DOWN_AIRFLOW, label: "Up/Down Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the horizontal flap's fixed up/down position." },
   { bit: HK_MAP_LEFT_RIGHT_TILT, capability: AC_CAP_LEFT_RIGHT_AIRFLOW, label: "Left/Right Tilt Tile", detail: "Adds a HomeKit Window Covering tile for the vertical vanes' fixed left/right position." },
   { bit: HK_MAP_UP_DOWN_SWING, capability: AC_CAP_UP_DOWN_AIRFLOW, label: "Up/Down Swing Tile", detail: "Adds a HomeKit switch dedicated to horizontal flap oscillation." },
   { bit: HK_MAP_LEFT_RIGHT_SWING, capability: AC_CAP_LEFT_RIGHT_AIRFLOW, label: "Left/Right Swing Tile", detail: "Adds a HomeKit switch dedicated to vertical vane oscillation." },
+  { bit: HK_MAP_DRY_MODE, capability: AC_CAP_DRY, label: "Dry Mode Switch", detail: "Adds a mutually exclusive HomeKit switch for CN105 DRY mode. The main AC tile appears Off while Dry is active." },
+  { bit: HK_MAP_FAN_MODE, capability: AC_CAP_FAN, label: "Fan-Only Mode Switch", detail: "Adds a mutually exclusive HomeKit switch for CN105 FAN mode. The main AC tile appears Off while Fan Only is active." },
 ] as const;
 
 type SettingsForm = Record<string, string>;
@@ -133,7 +141,7 @@ function defaultSettings(): SettingsForm {
     "cfg-homekit-model": "",
     "cfg-homekit-serial": "",
     "cfg-homekit-separate-airflow-tile": "1",
-    "cfg-homekit-advanced-mapping": "0",
+    "cfg-homekit-advanced-mapping": String(HK_MAP_DEFAULT),
     "cfg-ac-capabilities": String(AC_CAP_DEFAULT),
     "cfg-led-pin": "27",
     "cfg-cn105-mode": "real",
@@ -208,8 +216,8 @@ function normalizeAcCapabilities(value: number | string | undefined, fallbackHva
 }
 
 function normalizeHomeKitMapping(value: number | string | undefined): number {
-  const mapping = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return Number.isFinite(mapping) ? mapping & HK_MAP_KNOWN_MASK : 0;
+    const mapping = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(mapping) ? mapping & HK_MAP_KNOWN_MASK : HK_MAP_DEFAULT;
 }
 
 function hvacModeSetFromCapabilities(caps: number): Set<string> {
@@ -385,11 +393,17 @@ export function AdminPage(): JSX.Element {
   if ((currentAcCapabilities & AC_CAP_LEFT_RIGHT_AIRFLOW) !== 0) {
     effectiveHomeKitMapping |= currentHomeKitMapping & (HK_MAP_LEFT_RIGHT_TILT | HK_MAP_LEFT_RIGHT_SWING);
   }
+  if ((currentAcCapabilities & AC_CAP_DRY) !== 0) {
+    effectiveHomeKitMapping |= currentHomeKitMapping & HK_MAP_DRY_MODE;
+  }
+  if ((currentAcCapabilities & AC_CAP_FAN) !== 0) {
+    effectiveHomeKitMapping |= currentHomeKitMapping & HK_MAP_FAN_MODE;
+  }
   const separateHomeKitDisplay = (settings["cfg-homekit-separate-airflow-tile"] ?? "1") === "1";
   const homeKitPresentationChanged =
     (settings["cfg-homekit-separate-airflow-tile"] ?? "1") !== savedHomeKitDisplayMode ||
     currentHomeKitMapping !== savedHomeKitMapping ||
-    (currentAcCapabilities & AC_CAP_HOMEKIT_TARGET_MASK) !== (savedAcCapabilities & AC_CAP_HOMEKIT_TARGET_MASK);
+    (currentAcCapabilities & AC_CAP_KNOWN_MASK) !== (savedAcCapabilities & AC_CAP_KNOWN_MASK);
 
   // Bootstrap settings from first status that arrives.
   useEffect(() => {
@@ -774,13 +788,13 @@ export function AdminPage(): JSX.Element {
 
       <div id="automation">
         <Section title="Automation" action={<Btn compact disabled={automationBusy} onClick={refreshAutomation}>Refresh</Btn>}>
-          <div class="subtitle">Tiny Lua API v1 hooks that run on real CN105 state changes. Save, enable, then test with the actual indoor unit.</div>
+          <div class="subtitle">Tiny Lua API v2 hooks that run on real CN105 state changes. Save, enable, then test with the actual indoor unit.</div>
           <div class="info-banner automation-help">
             <strong>Write safely</strong>
             Use the <a href="https://kiri.dkt.moe/automation.html" target="_blank" rel="noreferrer">Kiri Automation Editor</a> for examples, syntax preflight, and API completion. Firmware validates every script again before saving.
           </div>
           <div class="automation-stats">
-            <div class="spec-row"><span class="key">API</span><span class="val">v{automation?.api_version ?? 1}</span></div>
+            <div class="spec-row"><span class="key">API</span><span class="val">v{automation?.api_version ?? 2}</span></div>
             <div class="spec-row"><span class="key">State</span><span class="val">{automation?.enabled ? "Enabled" : "Disabled"}</span></div>
             <div class="spec-row"><span class="key">Script</span><span class="val">{automation?.script_exists ? `${automation.script_size} / ${automation.script_max_bytes} bytes` : "Not saved"}</span></div>
             <div class="spec-row"><span class="key">Last Hook</span><span class="val">{automation?.last_set ? (automation.last_hook || "--") : "None yet"}</span></div>
@@ -1027,7 +1041,7 @@ export function AdminPage(): JSX.Element {
         open={mappingOpen}
         onClose={() => closeMapping(false)}
         title="Advanced HomeKit Mapping"
-        subtitle="Add optional HomeKit services for each airflow axis. With no options selected, Separate airflow tile behaves exactly like the legacy implementation."
+        subtitle="Add optional HomeKit services for airflow and CN105-only operating modes. These services are created only when Separate airflow tile and the matching AC Capability are enabled."
         size="wide"
       >
         <div class="danger-banner">
@@ -1059,6 +1073,10 @@ export function AdminPage(): JSX.Element {
             : (effectiveHomeKitMapping & HK_MAP_LEFT_RIGHT_SWING) !== 0
               ? "The Airflow fan tile keeps its Swing control for Up/Down oscillation. Left/Right oscillation belongs to its dedicated switch."
               : "The Airflow fan tile keeps its Swing control for Up/Down oscillation."}
+        </div>
+        <div class="info-banner" style={{ marginTop: "12px" }}>
+          <strong>Dry and Fan Only</strong>
+          These mode switches are mutually exclusive. Turning one Off restores the standard Auto, Heat, or Cool state that was active before it was enabled.
         </div>
         <div class="modal-actions">
           <Btn variant="primary" onClick={() => closeMapping(true)}>Confirm</Btn>

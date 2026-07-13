@@ -52,8 +52,8 @@ struct AutomationTarget {
     char power[16] = {};
     bool hasMode = false;
     char mode[16] = {};
-    bool hasTemperatureF = false;
-    int temperatureF = 0;
+    bool hasTargetTemperature = false;
+    cn105_core::HalfDegreesC targetTemperatureHalfC = 0;
     bool hasFan = false;
     char fan[16] = {};
     bool hasVane = false;
@@ -73,8 +73,8 @@ struct AutomationCommandJob {
     char power[16] = {};
     bool hasMode = false;
     char mode[16] = {};
-    bool hasTemperatureF = false;
-    int temperatureF = 0;
+    bool hasTargetTemperature = false;
+    cn105_core::HalfDegreesC targetTemperatureHalfC = 0;
     bool hasFan = false;
     char fan[16] = {};
     bool hasVane = false;
@@ -125,7 +125,7 @@ bool allowAutomationActionBatch() {
 }
 
 bool commandHasChanges(const cn105_core::SetCommand& command) {
-    return command.hasPower || command.hasMode || command.hasTemperatureF || command.hasFan ||
+    return command.hasPower || command.hasMode || command.hasTargetTemperature || command.hasFan ||
            command.hasVane || command.hasWideVane;
 }
 
@@ -133,8 +133,8 @@ AutomationCommandJob automationJobFromCommand(const cn105_core::SetCommand& comm
     AutomationCommandJob job{};
     job.hasPower = command.hasPower;
     job.hasMode = command.hasMode;
-    job.hasTemperatureF = command.hasTemperatureF;
-    job.temperatureF = command.temperatureF;
+    job.hasTargetTemperature = command.hasTargetTemperature;
+    job.targetTemperatureHalfC = command.targetTemperatureHalfC;
     job.hasFan = command.hasFan;
     job.hasVane = command.hasVane;
     job.hasWideVane = command.hasWideVane;
@@ -152,8 +152,8 @@ cn105_core::SetCommand commandFromAutomationJob(const AutomationCommandJob& job)
     command.power = job.hasPower ? job.power : nullptr;
     command.hasMode = job.hasMode;
     command.mode = job.hasMode ? job.mode : nullptr;
-    command.hasTemperatureF = job.hasTemperatureF;
-    command.temperatureF = job.temperatureF;
+    command.hasTargetTemperature = job.hasTargetTemperature;
+    command.targetTemperatureHalfC = job.targetTemperatureHalfC;
     command.hasFan = job.hasFan;
     command.fan = job.hasFan ? job.fan : nullptr;
     command.hasVane = job.hasVane;
@@ -197,7 +197,9 @@ void removeNoOpFields(const cn105_core::MockState& state, cn105_core::SetCommand
     }
     if (command->hasPower && equals(command->power, state.power)) command->hasPower = false;
     if (command->hasMode && equals(command->mode, state.mode)) command->hasMode = false;
-    if (command->hasTemperatureF && command->temperatureF == state.targetTemperatureF) command->hasTemperatureF = false;
+    if (command->hasTargetTemperature && command->targetTemperatureHalfC == state.targetTemperatureHalfC) {
+        command->hasTargetTemperature = false;
+    }
     if (command->hasFan && equals(command->fan, state.fan)) command->hasFan = false;
     if (command->hasVane && equals(command->vane, state.vane)) command->hasVane = false;
     if (command->hasWideVane && equals(command->wideVane, state.wideVane)) command->hasWideVane = false;
@@ -222,8 +224,8 @@ void rememberAutomationTarget(const cn105_core::SetCommand& command) {
     target.expiresAtUs = now + kAutomationTargetLifetimeUs;
     target.hasPower = command.hasPower;
     target.hasMode = command.hasMode;
-    target.hasTemperatureF = command.hasTemperatureF;
-    target.temperatureF = command.temperatureF;
+    target.hasTargetTemperature = command.hasTargetTemperature;
+    target.targetTemperatureHalfC = command.targetTemperatureHalfC;
     target.hasFan = command.hasFan;
     target.hasVane = command.hasVane;
     target.hasWideVane = command.hasWideVane;
@@ -237,7 +239,7 @@ void rememberAutomationTarget(const cn105_core::SetCommand& command) {
 bool targetMatchesState(const AutomationTarget& target, const cn105_core::MockState& state) {
     return (!target.hasPower || equals(target.power, state.power)) &&
            (!target.hasMode || equals(target.mode, state.mode)) &&
-           (!target.hasTemperatureF || target.temperatureF == state.targetTemperatureF) &&
+           (!target.hasTargetTemperature || target.targetTemperatureHalfC == state.targetTemperatureHalfC) &&
            (!target.hasFan || equals(target.fan, state.fan)) &&
            (!target.hasVane || equals(target.vane, state.vane)) &&
            (!target.hasWideVane || equals(target.wideVane, state.wideVane));
@@ -295,8 +297,13 @@ bool fillCommandFromLuaActions(const lua_vm::RunResult& result,
                 any = true;
                 break;
             case lua_vm::ActionType::kSetTargetTemperatureF:
-                command->hasTemperatureF = true;
-                command->temperatureF = action.intValue;
+                command->hasTargetTemperature = true;
+                command->targetTemperatureHalfC = cn105_core::fahrenheitSetpointToHalfDegrees(action.intValue);
+                any = true;
+                break;
+            case lua_vm::ActionType::kSetTargetTemperatureC:
+                command->hasTargetTemperature = true;
+                command->targetTemperatureHalfC = static_cast<cn105_core::HalfDegreesC>(action.intValue);
                 any = true;
                 break;
             case lua_vm::ActionType::kSetFan:

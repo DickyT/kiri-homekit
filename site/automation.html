@@ -24,7 +24,7 @@
 <main class="automation-main">
   <header class="automation-head shell">
     <div>
-      <div class="feature-eyebrow">Kiri Lua API v1</div>
+      <div class="feature-eyebrow">Kiri Lua API v2</div>
       <h1>Make the indoor unit<br><span class="accent">react locally</span>.</h1>
     </div>
     <p>Write a small rule here, run the preflight check, then paste it into <strong>Admin &gt; Automation</strong> on your Kiri Bridge. Scripts run locally with bounded memory and instructions.</p>
@@ -58,10 +58,10 @@
       </div>
 
       <aside class="automation-reference">
-        <div class="automation-reference-head">API reference <span>v1</span></div>
+        <div class="automation-reference-head">API reference <span>v2</span></div>
         <details open><summary>Hooks</summary><code>on_state_changed(now, previous)</code><code>on_power_on(now, previous)</code><code>on_power_off(now, previous)</code></details>
-        <details open><summary>Read state</summary><code>state.current()</code><code>now.power / power_raw / mode</code><code>now.room_temp_f / target_temp_f</code><code>now.fan / operating / connected</code><code>now.up_down_airflow</code><code>now.left_right_airflow</code><code>now.compressor_hz / input_power_w</code></details>
-        <details><summary>Control AC</summary><code>ac.set_power(boolean)</code><code>ac.set_mode("AUTO" | "HEAT" | "COOL" | "DRY" | "FAN")</code><code>ac.set_target_temp_f(50..88)</code><code>ac.set_fan("AUTO" | "QUIET" | 1..4)</code><code>ac.set_up_down_airflow("AUTO" | "SWING" | "1".."5")</code><code>ac.set_left_right_airflow(value)</code><code>ac.set_swing(boolean)</code></details>
+        <details open><summary>Read state</summary><code>state.current()</code><code>now.power / power_raw / mode</code><code>now.room_temp_f / room_temp_c</code><code>now.target_temp_f / target_temp_c</code><code>now.fan / operating / connected</code><code>now.up_down_airflow</code><code>now.left_right_airflow</code><code>now.compressor_hz / input_power_w</code></details>
+        <details><summary>Control AC</summary><code>ac.set_power(boolean)</code><code>ac.set_mode("AUTO" | "HEAT" | "COOL" | "DRY" | "FAN")</code><code>ac.set_target_temp_f(50..88)</code><code>ac.set_target_temp_c(10.0..31.0)</code><code>ac.set_fan("AUTO" | "QUIET" | 1..4)</code><code>ac.set_up_down_airflow("AUTO" | "SWING" | "1".."5")</code><code>ac.set_left_right_airflow(value)</code><code>ac.set_swing(boolean)</code></details>
         <details><summary>Persistent values</summary><code>kv.get("key")</code><code>kv.set("key", value)</code><code>kv.delete("key")</code><p>16 keys and 1 KiB total. Unchanged values do not rewrite flash.</p></details>
         <details><summary>Device and logs</summary><code>kiri.api_version</code><code>kiri.capabilities.*</code><code>log.info(value)</code><code>log.warn(value)</code></details>
         <div class="automation-safety"><strong>Safety limits</strong><span>12 KiB script</span><span>32 KiB VM arena</span><span>4 actions per hook</span><span>loop and action-storm protection</span></div>
@@ -165,6 +165,7 @@
           ['on_power_off', 'function on_power_off(state, previous)\n  $0\nend', 'Power-off hook'],
           ['ac.set_fan', 'ac.set_fan(${1:3})', 'Set fan speed'],
           ['ac.set_target_temp_f', 'ac.set_target_temp_f(${1:72})', 'Set target temperature'],
+          ['ac.set_target_temp_c', 'ac.set_target_temp_c(${1:21.5})', 'Set exact Celsius target temperature'],
           ['ac.set_up_down_airflow', 'ac.set_up_down_airflow("${1:1}")', 'Set up/down airflow'],
           ['kv.set', 'kv.set("${1:key}", ${2:value})', 'Persist a small value'],
           ['log.info', 'log.info(${1:value})', 'Write a diagnostic log']

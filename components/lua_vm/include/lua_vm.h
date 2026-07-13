@@ -10,7 +10,7 @@ namespace lua_vm {
 inline constexpr size_t kMaxActions = 4;
 inline constexpr size_t kRunHistorySize = 12;
 inline constexpr size_t kMaxScriptBytes = 12 * 1024;
-inline constexpr uint8_t kApiVersion = 1;
+inline constexpr uint8_t kApiVersion = 2;
 inline constexpr uint8_t kHookStateChanged = 1 << 0;
 inline constexpr uint8_t kHookPowerOn = 1 << 1;
 inline constexpr uint8_t kHookPowerOff = 1 << 2;
@@ -20,6 +20,7 @@ enum class ActionType {
     kSetPower,
     kSetMode,
     kSetTargetTemperatureF,
+    kSetTargetTemperatureC,
     kSetFan,
     kSetVane,
     kSetWideVane,

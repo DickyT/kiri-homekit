@@ -1,7 +1,7 @@
 # Kiri Automation API
 
 Kiri Bridge runs constrained Lua 5.4 scripts on real CN105 state changes. The
-current API version is `1`. Use the public
+current API version is `2`. Use the public
 [Kiri Automation Editor](https://kiri.dkt.moe/automation.html) for examples,
 completion, and syntax preflight, then paste the result into **Admin >
 Automation** on the device.
@@ -34,8 +34,8 @@ The hook argument and `state.current()` expose:
 | `power` | boolean | Whether the indoor unit is on |
 | `power_raw` | string | `ON` or `OFF` |
 | `mode` | string | Current CN105 mode |
-| `target_temp_f` | integer | Target temperature in Fahrenheit |
-| `room_temp_f` / `room_temp_c` | number | Reported room temperature |
+| `target_temp_f` / `target_temp_c` | number | Target temperature as the Mitsubishi Fahrenheit label or exact Celsius half-step |
+| `room_temp_f` / `room_temp_c` | number | Reported room temperature in either unit |
 | `fan` | string | `AUTO`, `QUIET`, or `1` through `4` |
 | `up_down_airflow` / `vane` | string | Horizontal flap state |
 | `left_right_airflow` / `wide_vane` | string | Vertical vane state |
@@ -46,9 +46,10 @@ The hook argument and `state.current()` expose:
 
 ## Device information
 
-`kiri.api_version` is `1`. `kiri.capabilities` contains boolean
-`auto_mode`, `heat_mode`, `cool_mode`, `up_down_airflow`, and
-`left_right_airflow` fields matching **Settings > AC Capabilities**.
+`kiri.api_version` is `2`. `kiri.capabilities` contains boolean
+`auto_mode`, `heat_mode`, `cool_mode`, `dry_mode`, `fan_mode`,
+`up_down_airflow`, and `left_right_airflow` fields matching **Settings > AC
+Capabilities**.
 
 ## AC actions
 
@@ -58,6 +59,7 @@ Each hook may request up to four actions:
 ac.set_power(true)
 ac.set_mode("COOL")              -- AUTO, HEAT, COOL, DRY, or FAN
 ac.set_target_temp_f(72)         -- 50 through 88 F
+ac.set_target_temp_c(21.5)       -- 10.0 through 31.0 C, in 0.5 C steps
 ac.set_fan(3)                    -- AUTO, QUIET, or 1 through 4
 ac.set_up_down_airflow("1")      -- AUTO, SWING, or 1 through 5
 ac.set_left_right_airflow("|")  -- <<, <, |, >, >>, <>, SWING, AIRFLOW CONTROL

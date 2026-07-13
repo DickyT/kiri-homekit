@@ -44,9 +44,13 @@ inline constexpr uint8_t kHomeKitMapUpDownTilt = 1u << 0;
 inline constexpr uint8_t kHomeKitMapLeftRightTilt = 1u << 1;
 inline constexpr uint8_t kHomeKitMapUpDownSwing = 1u << 2;
 inline constexpr uint8_t kHomeKitMapLeftRightSwing = 1u << 3;
+inline constexpr uint8_t kHomeKitMapDryModeSwitch = 1u << 4;
+inline constexpr uint8_t kHomeKitMapFanModeSwitch = 1u << 5;
+inline constexpr uint8_t kHomeKitMapDefault = kHomeKitMapDryModeSwitch | kHomeKitMapFanModeSwitch;
 inline constexpr uint8_t kHomeKitMapKnownMask =
     kHomeKitMapUpDownTilt | kHomeKitMapLeftRightTilt |
-    kHomeKitMapUpDownSwing | kHomeKitMapLeftRightSwing;
+    kHomeKitMapUpDownSwing | kHomeKitMapLeftRightSwing |
+    kHomeKitMapDryModeSwitch | kHomeKitMapFanModeSwitch;
 
 struct Settings {
     char deviceName[64] = "";
@@ -58,7 +62,7 @@ struct Settings {
     char homeKitSerial[64] = "";
     char homeKitSetupId[5] = "";
     bool homeKitSeparateAirflowTile = true;
-    uint8_t homeKitAdvancedMapping = 0;
+    uint8_t homeKitAdvancedMapping = kHomeKitMapDefault;
     uint32_t acCapabilities = kAcCapabilityDefault;
     bool useRealCn105 = true;
     int statusLedPin = board_profile::kDefaultStatusLedPin;
@@ -94,6 +98,8 @@ bool homeKitMapsUpDownTilt();
 bool homeKitMapsLeftRightTilt();
 bool homeKitMapsUpDownSwing();
 bool homeKitMapsLeftRightSwing();
+bool homeKitMapsDryModeSwitch();
+bool homeKitMapsFanModeSwitch();
 uint32_t acCapabilities();
 uint8_t homeKitTargetModeMask();
 const char* homeKitTargetModeMaskName();
