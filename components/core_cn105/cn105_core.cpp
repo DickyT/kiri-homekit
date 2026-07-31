@@ -137,42 +137,6 @@ int clampInt(int value, int min, int max) {
     return value;
 }
 
-float fahrenheitToNearestHalfCelsius(int fahrenheit) {
-    const float celsius = (static_cast<float>(fahrenheit) - 32.0f) / 1.8f;
-    return std::round(celsius * 2.0f) / 2.0f;
-}
-
-// Mitsubishi's Fahrenheit remotes use a lookup table rather than plain math.
-// Keep Fahrenheit Web/Lua setpoints on the same table as the physical remote.
-// Each entry is {fahrenheit, celsius_x10} where celsius_x10 is 0.1C units.
-struct FahrenheitEntry { int f; int c10; };
-static const FahrenheitEntry F_TO_C[] = {
-    {50,100},{51,105},{52,110},{53,115},{54,120},{55,125},{56,135},{57,140},
-    {58,145},{59,150},{60,155},{61,160},{62,165},{63,170},{64,175},{65,180},
-    {66,185},{67,190},{68,200},{69,210},{70,215},{71,220},{72,225},{73,230},
-    {74,235},{75,240},{76,245},{77,250},{78,255},{79,260},{80,265},{81,270},
-    {82,275},{83,280},{84,285},{85,290},{86,295},{87,300},{88,305},
-};
-constexpr int kFTableSize = sizeof(F_TO_C) / sizeof(F_TO_C[0]);
-
-float lookupCelsiusForFahrenheit(int fahrenheit) {
-    for (int i = 0; i < kFTableSize; ++i) {
-        if (F_TO_C[i].f == fahrenheit) {
-            return static_cast<float>(F_TO_C[i].c10) / 10.0f;
-        }
-    }
-    return fahrenheitToNearestHalfCelsius(fahrenheit);
-}
-
-int lookupFahrenheitForTargetHalfC(cn105_core::HalfDegreesC half_c) {
-    for (int i = 0; i < kFTableSize; ++i) {
-        if (F_TO_C[i].c10 == static_cast<int>(half_c) * 5) {
-            return F_TO_C[i].f;
-        }
-    }
-    return static_cast<int>(std::lround((static_cast<float>(half_c) / 2.0f) * 1.8f + 32.0f));
-}
-
 uint8_t encodeLegacyTemperatureByte(cn105_core::HalfDegreesC half_c) {
     int whole = (static_cast<int>(half_c) + 1) / 2;
     if (whole < 16) whole = 16;
@@ -233,11 +197,12 @@ float halfDegreesToCelsius(HalfDegreesC half_c) {
 }
 
 HalfDegreesC fahrenheitSetpointToHalfDegrees(int fahrenheit) {
-    return celsiusToHalfDegrees(lookupCelsiusForFahrenheit(fahrenheit));
+    const float celsius = (static_cast<float>(fahrenheit) - 32.0f) / 1.8f;
+    return celsiusToHalfDegrees(celsius);
 }
 
 int halfDegreesToFahrenheitSetpoint(HalfDegreesC half_c) {
-    return lookupFahrenheitForTargetHalfC(half_c);
+    return static_cast<int>(std::lround(halfDegreesToFahrenheit(half_c)));
 }
 
 float halfDegreesToFahrenheit(HalfDegreesC half_c) {

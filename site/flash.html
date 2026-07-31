@@ -344,6 +344,7 @@ async function verifyDevice(port,usbInfo){
   log('Verifying ESP32 bootloader at 115200 baud...');
   log('Reading chip type and MAC.');
   let chipName='';
+  let target='';
   let mac='';
   try{
     await esploader.detectChip();
@@ -351,7 +352,7 @@ async function verifyDevice(port,usbInfo){
       ? await esploader.chip.getChipDescription(esploader)
       : extractChipName(esploader);
     mac=normalizeMac(await readMac(esploader));
-    const target=targetForChipName(chipName);
+    target=targetForChipName(chipName);
     if(!isAllowedKiriChip(chipName)){
       throw new Error(`Unexpected chip: ${chipName || 'unknown'}. Expected ESP32 / ESP32-PICO-D4 / ESP32-S3.`);
     }

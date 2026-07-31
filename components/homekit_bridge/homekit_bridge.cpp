@@ -107,6 +107,10 @@ char last_standard_mode[8] = "COOL";
 char restore_mode[8] = "COOL";
 bool restore_power_on = true;
 bool restore_context_valid = false;
+char last_fixed_vane[16] = "AUTO";
+char last_fixed_wide_vane[24] = "|";
+bool last_fixed_vane_valid = false;
+bool last_fixed_wide_vane_valid = false;
 
 char* hapString(const char* value) {
     return const_cast<char*>(value);
@@ -129,6 +133,35 @@ esp_err_t addServiceNames(hap_serv_t* service, const char* name) {
 
 bool equals(const char* left, const char* right) {
     return left != nullptr && right != nullptr && std::strcmp(left, right) == 0;
+}
+
+void rememberFixedVane(const char* vane) {
+    if (vane == nullptr || vane[0] == '\0' || equals(vane, "SWING")) {
+        return;
+    }
+    std::snprintf(last_fixed_vane, sizeof(last_fixed_vane), "%s", vane);
+    last_fixed_vane_valid = true;
+}
+
+void rememberFixedWideVane(const char* wide_vane) {
+    if (wide_vane == nullptr || wide_vane[0] == '\0' || equals(wide_vane, "SWING")) {
+        return;
+    }
+    std::snprintf(last_fixed_wide_vane, sizeof(last_fixed_wide_vane), "%s", wide_vane);
+    last_fixed_wide_vane_valid = true;
+}
+
+void observeFixedAirflowState(const cn105_core::MockState& state) {
+    rememberFixedVane(state.vane);
+    rememberFixedWideVane(state.wideVane);
+}
+
+const char* fixedVaneOrDefault() {
+    return last_fixed_vane_valid ? last_fixed_vane : "AUTO";
+}
+
+const char* fixedWideVaneOrDefault() {
+    return last_fixed_wide_vane_valid ? last_fixed_wide_vane : "|";
 }
 
 bool isStandardMode(const char* mode) {
@@ -619,10 +652,10 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
             }
         } else {
             if (controls_up_down) {
-                command->vane = "AUTO";
+                command->vane = fixedVaneOrDefault();
             }
             if (controls_left_right) {
-                command->wideVane = "|";
+                command->wideVane = fixedWideVaneOrDefault();
             }
         }
         return true;
@@ -639,18 +672,24 @@ bool addClimateCommandFromWrite(hap_char_t* character, const hap_val_t& value, c
     }
     if (character == up_down_swing_on_char) {
         command->hasVane = true;
-        command->vane = value.b ? "SWING" : "AUTO";
+        command->vane = value.b ? "SWING" : fixedVaneOrDefault();
         return true;
     }
     if (character == left_right_swing_on_char) {
         command->hasWideVane = true;
-        command->wideVane = value.b ? "SWING" : "|";
+        command->wideVane = value.b ? "SWING" : fixedWideVaneOrDefault();
         return true;
     }
     return false;
 }
 
 void noteAcceptedCommand(const cn105_core::SetCommand& command) {
+    if (command.hasVane) {
+        rememberFixedVane(command.vane);
+    }
+    if (command.hasWideVane) {
+        rememberFixedWideVane(command.wideVane);
+    }
     if (command.hasMode && isStandardMode(command.mode)) {
         rememberStandardMode(command.mode);
         requested_special_mode = SpecialMode::kNone;
@@ -811,6 +850,7 @@ int advancedMappingWrite(hap_write_data_t write_data[], int count, void*, void*)
     }
 
     last_command_us = esp_timer_get_time();
+    noteAcceptedCommand(command);
     homekit_bridge::syncFromMock();
     setLastEvent("advanced-mapping-write");
     return HAP_SUCCESS;
@@ -982,7 +1022,11 @@ esp_err_t addTiltService(hap_acc_t* target_accessory, bool up_down) {
     const cn105_core::MockState state = cn105_core::getMockState();
     hap_serv_t*& service = up_down ? up_down_tilt_service : left_right_tilt_service;
     char* service_name = up_down ? up_down_tilt_service_name : left_right_tilt_service_name;
-    const int target_tilt = up_down ? horizontalTiltFromVane(state.vane) : verticalTiltFromWideVane(state.wideVane);
+    const char* position_value = up_down
+                                     ? (upDownSwingFromMock(state) ? fixedVaneOrDefault() : state.vane)
+                                     : (leftRightSwingFromMock(state) ? fixedWideVaneOrDefault() : state.wideVane);
+    const int target_tilt = up_down ? horizontalTiltFromVane(position_value)
+                                    : verticalTiltFromWideVane(position_value);
     const int current_tilt = up_down && equals(state.power, "OFF") ? -90 : target_tilt;
     const uint8_t target_position = positionFromTilt(target_tilt);
     const uint8_t current_position = positionFromTilt(current_tilt);
@@ -1108,7 +1152,9 @@ esp_err_t start() {
     setLastError("");
 
     copyMode(last_standard_mode, sizeof(last_standard_mode), fallbackStandardMode());
-    observeConfirmedModeState(cn105_core::getMockState());
+    const cn105_core::MockState initial_state = cn105_core::getMockState();
+    observeConfirmedModeState(initial_state);
+    observeFixedAirflowState(initial_state);
 
     if (hap_init(HAP_TRANSPORT_WIFI) != HAP_SUCCESS) {
         setLastError("hap_init failed");
@@ -1253,6 +1299,7 @@ void syncFromMock() {
 
     const cn105_core::MockState state = cn105_core::getMockState();
     observeConfirmedModeState(state);
+    observeFixedAirflowState(state);
     const float target_celsius = cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC);
     updateCharUInt8(active_char, heaterCoolerActiveFromMock(state));
     updateCharFloat(current_temp_char, cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC));
@@ -1267,15 +1314,19 @@ void syncFromMock() {
     updateCharFloat(fan_rotation_speed_char, fanToPercent(state.fan));
     updateCharUInt8(fan_swing_mode_char, swingFromMock(state));
     const bool up_down_swing = upDownSwingFromMock(state);
-    const int up_down_target_tilt = horizontalTiltFromVane(state.vane);
-    const int up_down_current_tilt = equals(state.power, "OFF") ? -90 : up_down_target_tilt;
-    updateCharUInt8(up_down_current_position_char, positionFromTilt(up_down_current_tilt));
-    updateCharUInt8(up_down_target_position_char, positionFromTilt(up_down_target_tilt));
+    if (!up_down_swing) {
+        const int up_down_target_tilt = horizontalTiltFromVane(state.vane);
+        const int up_down_current_tilt = equals(state.power, "OFF") ? -90 : up_down_target_tilt;
+        updateCharUInt8(up_down_current_position_char, positionFromTilt(up_down_current_tilt));
+        updateCharUInt8(up_down_target_position_char, positionFromTilt(up_down_target_tilt));
+    }
     updateCharBool(up_down_swing_on_char, up_down_swing);
     const bool left_right_swing = leftRightSwingFromMock(state);
-    const int left_right_tilt = verticalTiltFromWideVane(state.wideVane);
-    updateCharUInt8(left_right_current_position_char, positionFromTilt(left_right_tilt));
-    updateCharUInt8(left_right_target_position_char, positionFromTilt(left_right_tilt));
+    if (!left_right_swing) {
+        const int left_right_tilt = verticalTiltFromWideVane(state.wideVane);
+        updateCharUInt8(left_right_current_position_char, positionFromTilt(left_right_tilt));
+        updateCharUInt8(left_right_target_position_char, positionFromTilt(left_right_tilt));
+    }
     updateCharBool(left_right_swing_on_char, left_right_swing);
     const SpecialMode special_mode = activeSpecialModeFromMock(state);
     updateCharBool(dry_mode_on_char, special_mode == SpecialMode::kDry);
