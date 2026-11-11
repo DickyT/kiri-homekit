@@ -8,6 +8,7 @@ import { status, fetchStatusOnce, deviceName } from "../store";
 import { Section, Field, Btn } from "../components";
 import { navigate } from "../router";
 import { HomeKitPairingTile } from "../HomeKitPairingTile";
+import { BleSensorSummary } from "../BleSensorSummary";
 import { api } from "../api";
 import type { Cn105MockState } from "../types";
 
@@ -179,6 +180,7 @@ export function ControlPage(): JSX.Element {
           <div class="stat"><span class="key">Mode</span><span class="val">{m?.mode ?? "--"}</span></div>
           <div class="stat"><span class="key">Set Temp</span><span class="val">{m ? `${m.target_temperature_f}°F` : "--"}</span></div>
           <div class="stat"><span class="key">Room Temp</span><span class="val">{m ? `${m.room_temperature_f}°F` : "--"}</span></div>
+          <BleSensorSummary />
           <div class="stat"><span class="key">Fan</span><span class="val">{m?.fan ?? "--"}</span></div>
           <div class="stat"><span class="key">WiFi</span><span class="val">{wifiText}</span></div>
           <div class="stat"><span class="key">CN105</span><span class="val">{transportText}</span></div>

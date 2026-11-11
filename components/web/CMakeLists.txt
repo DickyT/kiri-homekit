@@ -69,6 +69,7 @@ idf_component_register(SRCS "web_http.cpp"
                             "web_server.cpp"
                             "${WEB_ASSETS_CPP}"
                        INCLUDE_DIRS "include"
+                       PRIV_REQUIRES qingping
                        REQUIRES app_config app_update board_profile build_info cn105_transport core_cn105 device_settings esp_http_server esp_timer homekit_bridge jsmn lua_vm ota_handler platform_fs platform_log platform_maintenance platform_provisioning platform_uart platform_wifi log)
 
 foreach(asset_file IN LISTS WEB_GZIP_ASSET_FILES)

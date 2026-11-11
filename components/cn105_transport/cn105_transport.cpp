@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 
 #include <cstdio>
+#include <atomic>
 #include <cstring>
 
 namespace {
@@ -54,6 +55,10 @@ struct TransportState {
     uint32_t rxErrors = 0;
     uint32_t txPackets = 0;
     uint32_t setAcks = 0;
+    uint32_t remoteTemperatureAcks = 0;
+    uint32_t remoteTemperatureAckId = 0;
+    uint32_t pendingRemoteTemperatureId = 0;
+    bool awaitingRemoteTemperatureAck = false;
     uint32_t controlInfoUpdates = 0;
     uint32_t roomInfoUpdates = 0;
     uint32_t runtimeInfoUpdates = 0;
@@ -79,8 +84,13 @@ struct TransportState {
 
 TransportState ts;
 QueueHandle_t set_queue = nullptr;
+std::atomic<uint32_t> nextRemoteTemperatureId{1};
 
 struct QueuedSetCommand {
+    bool remoteTemperature = false;
+    uint32_t remoteTemperatureId = 0;
+    bool remoteTemperatureEnabled = false;
+    cn105_core::HalfDegreesC remoteTemperatureHalfC = 0;
     bool optimistic = true;
     bool hasPower = false;
     char power[16] = "";
@@ -300,6 +310,7 @@ void sendSetPacket(const cn105_core::SetCommand& command, bool optimistic) {
     }
     if (uartSend(packet.bytes, packet.length)) {
         ts.phase = Phase::kAwaitingSetAck;
+        ts.awaitingRemoteTemperatureAck = false;
         ts.requestSentUs = nowUs();
         if (command.hasPower && command.power != nullptr && std::strcmp(command.power, "ON") == 0) {
             ts.forceFastPolling = true;
@@ -392,8 +403,14 @@ void handlePacket(const uint8_t* bytes, size_t len) {
             break;
         case 0x61:
             if (ts.phase == Phase::kAwaitingSetAck) {
-                ts.setAcks++;
-                ts.lastSetAckUs = nowUs();
+                if (ts.awaitingRemoteTemperatureAck) {
+                    ts.remoteTemperatureAcks++;
+                    ts.remoteTemperatureAckId = ts.pendingRemoteTemperatureId;
+                    ts.awaitingRemoteTemperatureAck = false;
+                } else {
+                    ts.setAcks++;
+                    ts.lastSetAckUs = nowUs();
+                }
                 ts.phase = Phase::kIdle;
                 ts.lastPollUs = 0;
                 ESP_LOGI(TAG, "SET acknowledged");
@@ -494,6 +511,19 @@ void transportTask(void*) {
             case Phase::kIdle: {
                 QueuedSetCommand queued{};
                 if (set_queue && xQueueReceive(set_queue, &queued, 0) == pdTRUE) {
+                    if (queued.remoteTemperature) {
+                        cn105_core::Packet packet{};
+                        char error[96] = {};
+                        if (cn105_core::buildRemoteTemperaturePacket(queued.remoteTemperatureEnabled,
+                                queued.remoteTemperatureHalfC, &packet, error, sizeof(error)) &&
+                            uartSend(packet.bytes, packet.length)) {
+                            ts.awaitingRemoteTemperatureAck = true;
+                            ts.pendingRemoteTemperatureId = queued.remoteTemperatureId;
+                            ts.phase = Phase::kAwaitingSetAck;
+                            ts.requestSentUs = nowUs();
+                        }
+                        break;
+                    }
                     const cn105_core::SetCommand command = commandView(queued);
                     sendSetPacket(command, queued.optimistic);
                     break;
@@ -560,9 +590,27 @@ Status getStatus() {
     status.rxErrors = ts.rxErrors;
     status.txPackets = ts.txPackets;
     status.setsPending = set_queue ? static_cast<uint32_t>(uxQueueMessagesWaiting(set_queue)) : 0;
+    status.remoteTemperatureAcks = ts.remoteTemperatureAcks;
+    status.remoteTemperatureAckId = ts.remoteTemperatureAckId;
     std::strncpy(status.phase, phaseName(ts.phase), sizeof(status.phase) - 1);
     std::strncpy(status.lastError, ts.lastError, sizeof(status.lastError) - 1);
     return status;
+}
+
+bool queueRemoteTemperature(bool enabled, cn105_core::HalfDegreesC roomHalfC, uint32_t* requestId) {
+    cn105_core::Packet validation{};
+    char error[96] = {};
+    if (!set_queue || !ts.connected ||
+        !cn105_core::buildRemoteTemperaturePacket(enabled, roomHalfC, &validation, error, sizeof(error))) return false;
+    QueuedSetCommand queued{};
+    queued.remoteTemperature = true;
+    queued.remoteTemperatureId = nextRemoteTemperatureId.fetch_add(1);
+    if (queued.remoteTemperatureId == 0) queued.remoteTemperatureId = nextRemoteTemperatureId.fetch_add(1);
+    queued.remoteTemperatureEnabled = enabled;
+    queued.remoteTemperatureHalfC = roomHalfC;
+    if (xQueueSend(set_queue, &queued, 0) != pdTRUE) return false;
+    if (requestId) *requestId = queued.remoteTemperatureId;
+    return true;
 }
 
 bool queueSetCommand(const cn105_core::SetCommand& command) {

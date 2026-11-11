@@ -107,11 +107,23 @@ export type FilesystemInfo = {
   total_bytes: number;
 };
 
+export type BleSensorStatus = {
+  bound: boolean;
+  online: boolean;
+  received: boolean;
+  paused: boolean;
+  temperature_c: number;
+  age_ms: number;
+  timeout_ms: number;
+};
+
 export type Status = {
   ok?: boolean;
   device: string;
   version: string;
   board?: BoardInfo;
+  ble_sensor?: BleSensorStatus;
+  server_time_unix_ms?: number;
   uptime_ms: number;
   wifi: WifiInfo;
   cn105: Cn105Block;

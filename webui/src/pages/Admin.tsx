@@ -5,6 +5,8 @@ import { useEffect, useState, useRef, useCallback } from "preact/hooks";
 import type { JSX } from "preact";
 import { Section, Field, Btn, Modal, OtaConfirmModal, RebootingModal } from "../components";
 import { HomeKitPairingTile } from "../HomeKitPairingTile";
+import { QingpingSettings } from "../QingpingSettings";
+import { BleSensorSummary } from "../BleSensorSummary";
 import { api } from "../api";
 import { status, fetchStatusOnce } from "../store";
 import type { Status, DeviceConfig, TransportStatus, BoardInfo, AutomationStatus } from "../types";
@@ -764,6 +766,7 @@ export function AdminPage(): JSX.Element {
         <div class="spec-row"><span class="key">Uptime</span><span class="val">{formatUptime(uptimeMs + (Date.now() - bootUnix - uptimeMs))}</span></div>
         <div class="spec-row"><span class="key">WiFi</span><span class="val">{wifiInfo}</span></div>
         <div class="spec-row"><span class="key">MAC</span><span class="val">{s.wifi.mac ?? "--"}</span></div>
+        <BleSensorSummary variant="spec-row" />
         <div class="spec-row"><span class="key">Storage</span><span class="val">{s.filesystem.used_bytes + " / " + s.filesystem.total_bytes + " bytes"}</span></div>
       </Section>
 
@@ -901,6 +904,8 @@ export function AdminPage(): JSX.Element {
           <Btn variant="primary" disabled={!settingsDirty} onClick={saveConfig}>{settingsDirty ? "Save and Reboot *" : "Save and Reboot"}</Btn>
         </div>
       </Section>
+
+      <QingpingSettings />
 
       <Section title="OTA Update">
         <div class="subtitle">Choose a versioned <code>.kiri</code> firmware package from the Kiri Bridge release. The browser checks the package before uploading the OTA app image.</div>

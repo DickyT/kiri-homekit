@@ -86,6 +86,8 @@ bool parseHex(const char* hex, uint8_t* out, size_t max_len, size_t* out_len, ch
 bool buildConnectPacket(Packet* packet, char* error, size_t error_len);
 bool buildInfoPacket(uint8_t infoCode, Packet* packet, char* error, size_t error_len);
 bool buildSetPacket(const SetCommand& command, Packet* packet, char* error, size_t error_len);
+// 0x07 external room-temperature reference, not the AC target setpoint.
+bool buildRemoteTemperaturePacket(bool enabled, HalfDegreesC roomHalfC, Packet* packet, char* error, size_t error_len);
 bool decodePacket(const uint8_t* bytes, size_t len, DecodedPacket* decoded, char* error, size_t error_len);
 
 void initMockState();

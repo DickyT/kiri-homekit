@@ -39,7 +39,7 @@ const FIELD_KEYS = [
 ] as const;
 
 const CN105_KEYS = ["rx_pin", "tx_pin", "baud", "data_bits", "parity", "stop_bits", "rx_pull", "tx_od"] as const;
-const DEFAULTS: SettingsForm = {
+const DEFAULTS: SettingsForm & Record<"led_pin" | "rx_pin" | "tx_pin", string> = {
   device_name: "Kiri Bridge",
   wifi_ssid: "YOUR_WIFI_SSID",
   wifi_pass: "YOUR_WIFI_PASSWORD",

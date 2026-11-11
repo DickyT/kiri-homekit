@@ -14,6 +14,7 @@
 #include "app_config.h"
 #include "build_info.h"
 #include "cn105_core.h"
+#include "qingping.h"
 #include "cn105_transport.h"
 #include "device_settings.h"
 #include "esp_event.h"
@@ -164,6 +165,12 @@ const char* fixedWideVaneOrDefault() {
     return last_fixed_wide_vane_valid ? last_fixed_wide_vane : "|";
 }
 
+float effectiveRoomTemperatureC(const cn105_core::MockState& state) {
+    float temperature = 0;
+    if (qingping::activeTemperatureC(&temperature)) return temperature;
+    return cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC);
+}
+
 bool isStandardMode(const char* mode) {
     return equals(mode, "AUTO") || equals(mode, "HEAT") || equals(mode, "COOL");
 }
@@ -269,7 +276,7 @@ uint8_t currentStateFromMock(const cn105_core::MockState& state) {
         return can_report_cooling ? kCurrentCooling : kCurrentIdle;
     }
     if (equals(state.mode, "AUTO")) {
-        if (state.roomTemperatureHalfC < state.targetTemperatureHalfC) {
+        if (effectiveRoomTemperatureC(state) < cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC)) {
             return can_report_heating ? kCurrentHeating : kCurrentIdle;
         }
         return can_report_cooling ? kCurrentCooling : kCurrentIdle;
@@ -933,7 +940,7 @@ esp_err_t addHeaterCoolerService(hap_acc_t* target_accessory) {
     const cn105_core::MockState state = cn105_core::getMockState();
     const bool separate_airflow_tile = device_settings::homeKitSeparateAirflowTile();
     heater_cooler = hap_serv_heater_cooler_create(heaterCoolerActiveFromMock(state),
-                                                  cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC),
+                                                  effectiveRoomTemperatureC(state),
                                                   currentStateFromMock(state),
                                                   targetStateFromMock(state));
     if (heater_cooler == nullptr) {
@@ -1302,7 +1309,7 @@ void syncFromMock() {
     observeFixedAirflowState(state);
     const float target_celsius = cn105_core::halfDegreesToCelsius(state.targetTemperatureHalfC);
     updateCharUInt8(active_char, heaterCoolerActiveFromMock(state));
-    updateCharFloat(current_temp_char, cn105_core::halfDegreesToCelsius(state.roomTemperatureHalfC));
+    updateCharFloat(current_temp_char, effectiveRoomTemperatureC(state));
     updateCharUInt8(current_state_char, currentStateFromMock(state));
     updateCharUInt8(target_state_char, targetStateFromMock(state));
     updateCharFloat(cooling_threshold_char, target_celsius);

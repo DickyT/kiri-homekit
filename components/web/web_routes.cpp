@@ -10,6 +10,7 @@
  ****************************************************************************/
 
 #include "web_routes.h"
+#include "qingping.h"
 
 #include "app_config.h"
 #include "board_profile.h"
@@ -680,6 +681,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
     const cn105_uart::Status cn105 = cn105_uart::getStatus();
     const cn105_core::MockState mock = cn105_core::getMockState();
     const homekit_bridge::Status homekit = homekit_bridge::getStatus();
+    const std::string sensor_json = qingping::statusJson(false);
     const cn105_transport::Status transport = cn105_transport::getStatus();
     const platform_log::Status log = platform_log::getStatus();
     const platform_provisioning::Status provisioning = platform_provisioning::getStatus();
@@ -742,6 +744,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   kStatusBodyLen,
                   "{"
                   "\"ok\":true,"
+                  "\"ble_sensor\":%s,"
                   "\"device\":\"%s\","
                   "\"version\":\"%s\","
                   "\"phase\":\"%s\","
@@ -786,6 +789,7 @@ esp_err_t statusHandler(httpd_req_t* req) {
                   "\"transport_status\":{\"running\":%s,\"connected\":%s,\"phase\":\"%s\",\"connect_attempts\":%lu,\"poll_cycles\":%lu,\"rx_packets\":%lu,\"rx_errors\":%lu,\"tx_packets\":%lu,\"sets_pending\":%lu,\"last_error\":\"%s\"},"
                   "%s}"
                   "}",
+                  sensor_json.c_str(),
                   esc_device_name,
                   esc_version,
                   app_config::kPhaseName,
@@ -1514,7 +1518,30 @@ esp_err_t clearAllNvsHandler(httpd_req_t* req) {
 }
 
 
+esp_err_t qingpingStatusHandler(httpd_req_t* req) {
+    const auto body = qingping::statusJson();
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return web_http::sendText(req, "application/json", body.c_str());
+}
+esp_err_t qingpingScanHandler(httpd_req_t* req) {
+    if (!qingping::refresh()) return web_http::sendJsonError(req,"Bluetooth scan unavailable during provisioning");
+    return qingpingStatusHandler(req);
+}
+esp_err_t qingpingBindHandler(httpd_req_t* req) {
+    char body[128] = {}, address[32] = {};
+    if (!readBody(req, body, sizeof(body)) || !web_http::queryValue(body,"address",address,sizeof(address)) ||
+        !qingping::bindAddress(address)) return web_http::sendJsonError(req,"Select a recently discovered Qingping device; binding could not be saved");
+    return qingpingStatusHandler(req);
+}
+esp_err_t qingpingUnbindHandler(httpd_req_t* req) {
+    if (!qingping::unbind()) return web_http::sendJsonError(req,"Could not remove saved sensor binding");
+    return qingpingStatusHandler(req);
+}
 const web_http::Route ROUTES[] = {
+    { "/api/qingping", HTTP_GET, qingpingStatusHandler },
+    { "/api/qingping/scan", HTTP_POST, qingpingScanHandler },
+    { "/api/qingping/bind", HTTP_POST, qingpingBindHandler },
+    { "/api/qingping/bind", HTTP_DELETE, qingpingUnbindHandler },
     { "/", HTTP_GET, rootHandler },
     { "/logs", HTTP_GET, logsHandler },
     { "/admin", HTTP_GET, adminHandler },

@@ -43,7 +43,7 @@ const TERSER_OPTS = {
 };
 
 const SIZE_LIMITS = {
-  main: { jsGz: 30 * 1024, cssGz: 8 * 1024 },
+  main: { jsGz: 33 * 1024, cssGz: 8 * 1024 },
   installer: { htmlGz: 18 * 1024 },
 };
 

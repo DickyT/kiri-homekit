@@ -233,6 +233,21 @@ h3 {
 }
 
 /* Form fields */
+.qingping-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+.qingping-table th, .qingping-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border, #282828);
+  overflow-wrap: anywhere;
+}
+.qingping-table th { color: var(--accent); font-weight: 500; }
+.qingping-table small { display: block; font-size: 11px; color: var(--muted, #999); }
 .field {
   display: block;
   margin-bottom: 0

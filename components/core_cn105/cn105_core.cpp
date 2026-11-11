@@ -296,6 +296,24 @@ bool buildInfoPacket(uint8_t infoCode, Packet* packet, char* error, size_t error
     return true;
 }
 
+bool buildRemoteTemperaturePacket(bool enabled, HalfDegreesC roomHalfC, Packet* packet, char* error, size_t error_len) {
+    // Encoding A = round(C * 2) - 17; Encoding B = round(C * 2) + 128.
+    // Keep both encodings representable; reject rather than wrap out-of-range values.
+    if (packet == nullptr || (enabled && (roomHalfC < 17 || roomHalfC > 100))) {
+        setError(error, error_len, "external room temperature must be between 8.5C and 50C");
+        return false;
+    }
+    *packet = {};
+    std::memcpy(packet->bytes, HEADER, HEADER_LEN);
+    packet->bytes[5] = 0x07;
+    packet->bytes[6] = enabled ? 1 : 0;
+    packet->bytes[7] = enabled ? static_cast<uint8_t>(roomHalfC - 17) : 0;
+    packet->bytes[8] = enabled ? static_cast<uint8_t>(roomHalfC + 128) : 0x80;
+    packet->bytes[kPacketLen - 1] = checksum(packet->bytes, kPacketLen - 1);
+    packet->length = kPacketLen;
+    return true;
+}
+
 bool buildSetPacket(const SetCommand& command, Packet* packet, char* error, size_t error_len) {
     if (packet == nullptr) {
         setError(error, error_len, "packet output is null");
@@ -600,6 +618,18 @@ void setConnected(bool connected) {
 }
 
 bool runSelfTest(char* error, size_t error_len) {
+    Packet remote{};
+    if (!buildRemoteTemperaturePacket(true, 45, &remote, error, error_len) ||
+        remote.bytes[5] != 7 || remote.bytes[6] != 1 || remote.bytes[7] != 28 ||
+        remote.bytes[8] != 173 || remote.bytes[21] != checksum(remote.bytes, 21)) {
+        setError(error, error_len, "external 22.5C encoding failed");
+        return false;
+    }
+    if (!buildRemoteTemperaturePacket(false, 0, &remote, error, error_len) ||
+        remote.bytes[6] != 0 || remote.bytes[7] != 0 || remote.bytes[8] != 0x80) {
+        setError(error, error_len, "internal sensor restore encoding failed");
+        return false;
+    }
     for (int temp_f = 50; temp_f <= 88; ++temp_f) {
         const HalfDegreesC half_c = fahrenheitSetpointToHalfDegrees(temp_f);
         const int decoded_f = halfDegreesToFahrenheitSetpoint(half_c);

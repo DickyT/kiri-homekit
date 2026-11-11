@@ -15,6 +15,7 @@
 #include "app_config.h"
 #include "build_info.h"
 #include "cn105_core.h"
+#include "qingping.h"
 #include "cn105_transport.h"
 #include "cn105_uart.h"
 #include "device_settings.h"
@@ -492,6 +493,8 @@ extern "C" void app_main(void) {
         ESP_LOGE(TAG, "WiFi init failed: %s", esp_err_to_name(wifi_err));
     }
 
+    const esp_err_t sensor_err = qingping::init();
+    if (sensor_err != ESP_OK) ESP_LOGE(TAG, "Qingping service init failed: %s", esp_err_to_name(sensor_err));
     const esp_err_t provisioning_err = platform_provisioning::init();
     if (provisioning_err != ESP_OK) {
         ESP_LOGE(TAG, "BLE provisioning init failed: %s", esp_err_to_name(provisioning_err));
@@ -512,9 +515,11 @@ extern "C" void app_main(void) {
     uint32_t heartbeat = 0;
     while (true) {
         platform_wifi::maintain();
+        // BLE readings and timeout/unbind transitions can change HomeKit room
+        // temperature even when the indoor unit reports no changed CN105 state.
+        homekit_bridge::syncFromMock();
         if (cn105_core::isMockDirty()) {
             const cn105_core::MockState current_state = cn105_core::getMockState();
-            homekit_bridge::syncFromMock();
             if (consumeAutomationEcho(current_state)) {
                 ESP_LOGI(TAG, "Skipping Lua hooks for automation-originated state confirmation");
             } else {

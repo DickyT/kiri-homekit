@@ -10,6 +10,7 @@
  ****************************************************************************/
 
 #include "platform_provisioning.h"
+#include "qingping.h"
 
 #include "app_config.h"
 #include "device_settings.h"
@@ -245,6 +246,7 @@ void eventHandler(void*, esp_event_base_t event_base, int32_t event_id, void* ev
             if (lock.locked() && state.managerInitialized) {
                 wifi_prov_mgr_deinit();
                 state.managerInitialized = false;
+                qingping::resumeAfterProvisioning();
             }
             ESP_LOGI(TAG, "Provisioning manager stopped");
         }
@@ -294,9 +296,17 @@ esp_err_t startProvisioningSession() {
         }
     }
 
+    if (!qingping::pauseForProvisioning()) {
+        platform_lock::ScopedLock lock(state.lock);
+        state.active = false;
+        setLastResultLocked("bluetooth-busy");
+        qingping::resumeAfterProvisioning();
+        return ESP_FAIL;
+    }
     wifi_prov_mgr_config_t prov_config = {};
     prov_config.scheme = wifi_prov_scheme_ble;
-    prov_config.scheme_event_handler = WIFI_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM;
+    // Scanner needs Bluetooth again after the provisioning window closes.
+    prov_config.scheme_event_handler = WIFI_PROV_EVENT_HANDLER_NONE;
     prov_config.app_event_handler = WIFI_PROV_EVENT_HANDLER_NONE;
     esp_err_t err = wifi_prov_mgr_init(prov_config);
     if (err != ESP_OK) {
@@ -307,6 +317,7 @@ esp_err_t startProvisioningSession() {
             setStageLocked("init-failed");
             setLastResultLocked("init-failed");
         }
+        qingping::resumeAfterProvisioning();
         return err;
     }
 
@@ -342,6 +353,7 @@ esp_err_t startProvisioningSession() {
             setLastResultLocked("start-failed");
         }
         wifi_prov_mgr_deinit();
+        qingping::resumeAfterProvisioning();
         return err;
     }
 
