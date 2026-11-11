@@ -1,0 +1,3 @@
+# Local Finder metadata and TypeScript-only declarations are not website assets.
+**/.DS_Store
+**/*.d.ts

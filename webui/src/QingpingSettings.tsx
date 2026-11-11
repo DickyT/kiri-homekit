@@ -1,6 +1,7 @@
 // Kiri Bridge — https://kiri.dkt.moe — GPL-3.0
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Section, Modal } from "./components";
+import { status, lastFetchAt } from "./store";
 interface Sensor {
   address: string; service_uuid: string; model: number; temperature_c: number;
   humidity: number; battery: number; rssi: number; age_ms: number;
@@ -17,11 +18,18 @@ export function QingpingSettings() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState("loading");
   const [info, setInfo] = useState<SensorStatus | null>(null);
+  const [infoAt, setInfoAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const generation = useRef(0);
   const busyRef = useRef(false);
+  function receiveInfo(result: SensorStatus) { setInfo(result); setInfoAt(Date.now()); }
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   async function request(path = "/api/qingping", method = "GET", address?: string) {
     const response = await fetch(path, { method, cache: "no-store", headers: address ? { "Content-Type": "application/x-www-form-urlencoded" } : undefined,
       body: address ? new URLSearchParams({ address }) : undefined });
@@ -35,7 +43,7 @@ export function QingpingSettings() {
     try {
       const result = await request();
       if (generation.current !== g) return;
-      setInfo(result); setStep(result.bound ? "paired" : "intro");
+      receiveInfo(result); setStep(result.bound ? "paired" : "intro");
     } catch (e) { if (generation.current === g) { setError(String(e)); setStep("intro"); } }
   }
   function close() { if (busyRef.current) return; generation.current++; setOpen(false); }
@@ -46,7 +54,7 @@ export function QingpingSettings() {
       if (document.hidden || !document.hasFocus() || inflight || busyRef.current) return;
       inflight = true;
       const g = generation.current;
-      try { const result = await request(); if (!stopped && g === generation.current && !busyRef.current) setInfo(result); }
+      try { const result = await request(); if (!stopped && g === generation.current && !busyRef.current) receiveInfo(result); }
       catch (e) { if (!stopped && g === generation.current && !busyRef.current) setError(String(e)); }
       finally { inflight = false; }
     }, 2000);
@@ -57,7 +65,7 @@ export function QingpingSettings() {
     busyRef.current = true; generation.current++; setBusy(true); setError("");
     try {
       const result = await request(kind === "scan" ? "/api/qingping/scan" : "/api/qingping/bind", kind === "remove" ? "DELETE" : "POST", kind === "bind" ? selected : undefined);
-      setInfo(result);
+      receiveInfo(result);
       if (kind === "scan") { setStep("scan"); setSelected(""); }
       else if (kind === "bind") setStep("success");
       else { setStep("intro"); setSelected(""); }
@@ -65,12 +73,23 @@ export function QingpingSettings() {
     finally { busyRef.current = false; setBusy(false); }
   }
   const live = !!info?.bound && info.received;
+  const useLocal = !!info && infoAt >= lastFetchAt.value;
+  const preview = useLocal ? info : status.value?.ble_sensor;
+  const previewAt = useLocal ? infoAt : lastFetchAt.value;
+  const previewAge = (preview?.age_ms ?? 0) + Math.max(0, Math.max(now, Date.now()) - previewAt);
+  const previewOnline = !!preview?.bound && preview.received && preview.online && previewAge < 300000;
+  const previewState = !preview ? "Loading sensor status…" : !preview.bound ? "Not bound"
+    : preview.paused ? "Bound · Paused" : !preview.received ? "Bound · Waiting for data"
+    : !previewOnline ? "Bound · Offline" : preview.control_usable ? "Bound · Active" : "Bound · Not used for control";
   return <>
     <Section title="External Room Temperature">
-      <div class="subtitle">Bind a Qingping BLE sensor for CN105 control and HomeKit room-temperature reporting. Binding and unbinding take effect immediately; no Save and Reboot is needed.</div>
+      <div class="subtitle">Use a BLE room sensor for CN105 control and HomeKit room-temperature reporting. Binding and unbinding take effect immediately; no Save and Reboot is needed.</div>
+      <div class="spec-row"><span class="key">Status</span><span class="val">{previewState}</span></div>
+      <div class="spec-row"><span class="key">Temperature</span><span class="val">{preview?.bound && preview.received && previewOnline ? temperature(preview.temperature_c) : "—"}</span></div>
+      <div class="spec-row"><span class="key">Last Received</span><span class="val">{preview?.bound && preview.received ? age(previewAge) : preview?.bound ? "Waiting for the first reading" : "—"}</span></div>
       <div class="btns"><button type="button" class="btn primary" onClick={show}>Configure Room Sensor</button></div>
     </Section>
-    <Modal open={open} onClose={close} title="Qingping Room Sensor" subtitle="Use a selected room sensor instead of the indoor unit's temperature reference." size="wide">
+    <Modal open={open} onClose={close} title="BLE Room Sensor" subtitle="Use a selected room sensor instead of the indoor unit's temperature reference." size="wide">
       {step === "loading" && <p>Loading sensor status…</p>}
       {error && <div class="danger-banner" role="alert">{error}</div>}
       {!!info?.ble_error && <div class="danger-banner" role="alert">Bluetooth scanner error: {info.ble_error}. Close the WiFi provisioning window and refresh to retry.</div>}
@@ -100,7 +119,7 @@ export function QingpingSettings() {
           <tr><th>Humidity</th><td>{live && info ? `${info.humidity.toFixed(1)}%` : "—"}</td></tr>
           <tr><th>Battery</th><td>{live && info && info.battery >= 0 ? `${info.battery}%` : "Unknown"}</td></tr>
           <tr><th>Signal</th><td>{info?.rssi ? `${info.rssi} dBm` : "—"}</td></tr>
-          <tr><th>HomeKit Temperature Source</th><td>{info?.control_usable ? "Qingping sensor" : "Indoor unit"}</td></tr>
+          <tr><th>HomeKit Temperature Source</th><td>{info?.control_usable ? "BLE room sensor" : "Indoor unit"}</td></tr>
           <tr><th>Last Temperature Received</th><td>{live && info ? age(info.age_ms) : "Not received since binding / reboot"}</td></tr>
           <tr><th>CN105 Command</th><td>{info?.message}{info?.command_pending ? " (awaiting ACK)" : ""}</td></tr>
         </tbody></table>

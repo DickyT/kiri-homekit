@@ -418,6 +418,16 @@ input[type=file] {
 .file-pick-button {
   min-width: 190px
 }
+.firmware-drop-zone {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px dashed var(--line-strong);
+}
+.firmware-drop-zone.dragging {
+  border-color: var(--accent);
+  background: #ff784910;
+}
+.firmware-drop-zone[aria-disabled=true] { opacity: .65; }
 
 select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23ff7849' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");

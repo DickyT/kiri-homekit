@@ -40,8 +40,13 @@ try {
     const section = page.locator('section').filter({has:page.getByRole('heading',{name:'External Room Temperature',exact:true})});
     assert.equal(await section.count(),1);
     await section.getByText('Binding and unbinding take effect immediately', {exact:false}).waitFor();
+    assert.ok(!(await section.innerText()).includes('Qingping'),'Settings entry must be sensor-brand neutral');
+    assert.equal(await section.locator('.spec-row').count(),3);
+    assert.equal(await section.getByRole('button').innerText(),'CONFIGURE ROOM SENSOR');
     await page.getByRole('button',{name:'Configure Room Sensor',exact:true}).click();
+    await page.getByRole('heading',{name:'BLE Room Sensor',exact:true}).waitFor();
     await page.getByRole('heading',{name:'01 — Find your room sensor'}).waitFor();
+    await section.getByText('Not bound',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Refresh Nearby Sensors'}).click();
     await page.getByRole('heading',{name:'02 — Select one sensor'}).waitFor();
     assert.equal(bindingWrites,0);
@@ -53,9 +58,14 @@ try {
     assert.equal(bindingWrites,1);
     state={...state,received:true,online:true,temperature_c:22.7,humidity:40,battery:85,control_usable:true};
     await page.getByRole('cell',{name:'Online',exact:true}).waitFor();
+    await section.getByText('Bound · Active',{exact:true}).waitFor();
+    assert.ok((await section.innerText()).includes('22.7°C / 72.9°F'));
     await page.getByRole('cell',{name:'22.7°C / 72.9°F',exact:true}).waitFor();
     state={...state,online:false,age_ms:300000,control_usable:false};
     await page.getByRole('cell',{name:'Offline',exact:true}).waitFor();
+    await section.getByText('Bound · Offline',{exact:true}).waitFor();
+    assert.ok((await section.locator('.spec-row').last().innerText()).includes('5m'));
+    assert.equal(await section.getByRole('button').textContent(),'Configure Room Sensor');
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await page.getByRole('button',{name:'Done',exact:true}).click();
     await page.getByRole('button',{name:'Configure Room Sensor',exact:true}).click();
@@ -67,6 +77,7 @@ try {
     await page.getByRole('button',{name:'Unbind Sensor',exact:true}).click();
     await page.getByRole('heading',{name:'01 — Find your room sensor'}).waitFor();
     assert.equal(deletes,1);
+    await section.getByText('Not bound',{exact:true}).waitFor();
     failScan=true;
     await page.getByRole('button',{name:'Refresh Nearby Sensors'}).click();
     await page.getByRole('alert').filter({hasText:'Bluetooth scan unavailable'}).waitFor();

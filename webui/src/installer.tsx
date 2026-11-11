@@ -10,6 +10,7 @@ import "./styles.css";
 import { validateAndUpload } from "./lib/ota";
 import type { OtaUploadResult } from "./lib/ota";
 import { OtaConfirmModal, RebootingModal } from "./components";
+import { FirmwarePicker } from "./FirmwarePicker";
 
 // ---------- types ----------
 
@@ -97,7 +98,6 @@ function InstallerApp(): JSX.Element {
   const [cn105Open, setCn105Open] = useState(false);
   const [cn105Snapshot, setCn105Snapshot] = useState<SettingsForm | null>(null);
   const rebootTimer = useRef<number | undefined>(undefined);
-  const otaInputRef = useRef<HTMLInputElement>(null);
 
   function update(key: string, value: string): void {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -355,14 +355,7 @@ function InstallerApp(): JSX.Element {
         </Step>
 
         <Step n={3} title="OTA upload" hint={<>Choose the versioned production <code>.kiri</code> firmware package from the Kiri Bridge release. Upload starts on selection.</>} locked={step !== 3} id="step3">
-          <input ref={otaInputRef} class="file-input-hidden" type="file" accept=".kiri" onChange={(e) => {
-            const f = (e.target as HTMLInputElement).files?.[0];
-            (e.target as HTMLInputElement).value = "";
-            if (f) uploadFirmware(f);
-          }} />
-          <button class="btn primary file-pick-button" type="button" onClick={() => otaInputRef.current?.click()}>
-            Choose Firmware
-          </button>
+          <FirmwarePicker disabled={step !== 3 || !!otaModal || rebooting} onSelect={uploadFirmware} />
           {otaProgress !== null && <progress value={otaProgress} max={100} style={{ marginTop: "12px" }} />}
           <pre>{otaOut}</pre>
         </Step>

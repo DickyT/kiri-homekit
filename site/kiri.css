@@ -814,6 +814,9 @@ input[type=text]:focus,input[type=password]:focus,input[type=file]:focus{
   border-color:var(--accent);
 }
 input[type=file]{cursor:pointer;font-family:var(--mono);font-size:13px}
+.firmware-drop-zone{margin-top:16px;padding:20px;border:1px dashed var(--line-strong)}
+.firmware-drop-zone.dragging{border-color:var(--accent);background:#ff784910}
+.firmware-drop-zone[aria-disabled=true]{opacity:.65}
 .file-input-hidden{
   position:absolute;
   width:1px;

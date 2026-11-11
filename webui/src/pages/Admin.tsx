@@ -6,6 +6,7 @@ import type { JSX } from "preact";
 import { Section, Field, Btn, Modal, OtaConfirmModal, RebootingModal } from "../components";
 import { HomeKitPairingTile } from "../HomeKitPairingTile";
 import { QingpingSettings } from "../QingpingSettings";
+import { FirmwarePicker } from "../FirmwarePicker";
 import { BleSensorSummary } from "../BleSensorSummary";
 import { api } from "../api";
 import { status, fetchStatusOnce } from "../store";
@@ -383,7 +384,6 @@ export function AdminPage(): JSX.Element {
   const [maintMsg, setMaintMsg] = useState("");
   const [tick, setTick] = useState(0);
   const rebootTimer = useRef<number | undefined>(undefined);
-  const otaInputRef = useRef<HTMLInputElement>(null);
   const currentAcCapabilities = normalizeAcCapabilities(settings["cfg-ac-capabilities"]);
   const capabilitiesHvacChanged = capabilitiesSnapshot !== null
     && ((normalizeAcCapabilities(capabilitiesSnapshot) ^ currentAcCapabilities) & AC_CAP_HOMEKIT_TARGET_MASK) !== 0;
@@ -909,14 +909,7 @@ export function AdminPage(): JSX.Element {
 
       <Section title="OTA Update">
         <div class="subtitle">Choose a versioned <code>.kiri</code> firmware package from the Kiri Bridge release. The browser checks the package before uploading the OTA app image.</div>
-        <input ref={otaInputRef} class="file-input-hidden" type="file" accept=".kiri" disabled={otaUploading} onChange={(e) => {
-          const f = (e.target as HTMLInputElement).files?.[0];
-          (e.target as HTMLInputElement).value = "";
-          if (f) uploadOta(f);
-        }} />
-        <button class="btn primary file-pick-button" type="button" disabled={otaUploading} onClick={() => otaInputRef.current?.click()}>
-          {otaUploading ? "Uploading…" : "Choose Firmware"}
-        </button>
+        <FirmwarePicker disabled={otaUploading || !!otaModalState || otaApplying || rebooting} onSelect={uploadOta} />
         {otaShowProgress && <progress value={otaProgress} max={100} style={{ marginTop: "12px" }} />}
         {otaMsg && <div style={{ marginTop: "10px", fontSize: "13px", color: otaMsgError ? "var(--bad)" : "var(--accent)" }}>{otaMsg}</div>}
       </Section>

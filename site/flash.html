@@ -59,10 +59,13 @@
       <div>
         <h2>Board verified. Choose firmware.</h2>
         <p class="hint">The Kiri Bridge is reserved over USB. Choose a <span class="mono">.kiri</span> firmware package from <a href="https://github.com/DickyT/kiri-homekit/releases/">GitHub Releases</a>; the browser checks the manifest, sizes, and checksums before writing anything.</p>
-        <input id="package-file" class="file-input-hidden" type="file" accept=".kiri">
+        <div id="package-drop-zone" class="firmware-drop-zone" aria-disabled="true">
+          <input id="package-file" class="file-input-hidden" type="file" accept=".kiri">
+          <button id="choose-package-btn" class="btn btn-primary">Choose firmware →</button>
+          <p class="hint">Or drag and drop one .kiri firmware package here.</p>
+        </div>
         <div id="package-details"></div>
         <div class="tool-actions">
-          <button id="choose-package-btn" class="btn btn-primary">Choose firmware →</button>
           <button id="back-serial-btn" class="btn">Choose another board</button>
         </div>
       </div>
@@ -183,13 +186,15 @@ function setSerialState(){
   $('serial-btn').disabled=!ok;
 }
 
+let packageChecking=false;
 function showStep(step){
   currentStep=step;
   $('step-serial').classList.toggle('step-hidden',step!==1);
   $('step-package').classList.toggle('step-hidden',step!==2);
   $('step-flash').classList.toggle('step-hidden',step!==3);
-  $('package-file').disabled=step!==2;
-  $('choose-package-btn').disabled=step!==2;
+  $('package-file').disabled=step!==2||packageChecking;
+  $('choose-package-btn').disabled=step!==2||packageChecking;
+  $('package-drop-zone').setAttribute('aria-disabled',String(step!==2||packageChecking));
   if(step===3)renderFlashSummary();
   $('flash-btn').disabled=step!==3||!selectedPort||!selectedPackage||!$('confirm-hardware').checked;
 }
@@ -559,17 +564,17 @@ function renderPackageDetails(pkg){
     </table>`;
 }
 
-async function handlePackageSelection(){
-  const file=$('package-file').files&&$('package-file').files[0];
+async function handlePackageSelection(file){
+  if(packageChecking||currentStep!==2||!selectedPort||!selectedDeviceInfo||!file)return;
+  packageChecking=true;
+  $('package-file').disabled=true;
+  $('choose-package-btn').disabled=true;
+  $('back-serial-btn').disabled=true;
+  $('package-drop-zone').setAttribute('aria-disabled','true');
   selectedPackage=null;
   $('package-details').innerHTML='';
   $('choose-package-btn').textContent='Choose firmware →';
   resetFlashProgress();
-  if(!file){
-    setPackageState('not selected');
-    showStep(2);
-    return;
-  }
   try{
     setPackageState('checking '+file.name,'warn');
     selectedPackage=await parseKiriPackage(file);
@@ -587,6 +592,10 @@ async function handlePackageSelection(){
     setPackageState(e.message,'bad');
     log('Package selection failed: '+e.message);
     showStep(2);
+  }finally{
+    packageChecking=false;
+    $('back-serial-btn').disabled=false;
+    showStep(currentStep);
   }
 }
 
@@ -695,7 +704,31 @@ $('continue-package-btn').addEventListener('click',()=>showStep(2));
 $('back-serial-btn').addEventListener('click',resetToSerialStep);
 $('back-package-btn').addEventListener('click',resetToPackageStep);
 $('choose-package-btn').addEventListener('click',()=>$('package-file').click());
-$('package-file').addEventListener('change',handlePackageSelection);
+$('package-file').addEventListener('change',()=>{
+  const file=$('package-file').files&&$('package-file').files[0];
+  $('package-file').value='';
+  if(file)void handlePackageSelection(file);
+});
+const packageDropZone=$('package-drop-zone');
+packageDropZone.addEventListener('dragover',event=>{
+  if(!event.dataTransfer?.types.includes('Files'))return;
+  event.preventDefault();
+  if(currentStep===2&&!packageChecking)packageDropZone.classList.add('dragging');
+});
+packageDropZone.addEventListener('dragleave',event=>{
+  if(!(event.relatedTarget instanceof Node)||!packageDropZone.contains(event.relatedTarget))packageDropZone.classList.remove('dragging');
+});
+packageDropZone.addEventListener('drop',event=>{
+  event.preventDefault();event.stopPropagation();packageDropZone.classList.remove('dragging');
+  if(currentStep!==2||packageChecking||!selectedPort||!selectedDeviceInfo)return;
+  const files=event.dataTransfer?.files;
+  if(!files?.length)return;
+  if(files.length!==1){setPackageState('Choose one .kiri firmware package at a time.','bad');return;}
+  void handlePackageSelection(files[0]);
+});
+for(const type of ['dragover','drop'])window.addEventListener(type,event=>{
+  if(event.dataTransfer?.types.includes('Files'))event.preventDefault();
+});
 $('flash-btn').addEventListener('click',flashSelectedPackage);
 $('confirm-hardware').addEventListener('change',()=>showStep(currentStep));
 $('clear-log-btn').addEventListener('click',()=>{$('log').textContent='';});

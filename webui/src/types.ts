@@ -115,6 +115,7 @@ export type BleSensorStatus = {
   temperature_c: number;
   age_ms: number;
   timeout_ms: number;
+  control_usable: boolean;
 };
 
 export type Status = {
